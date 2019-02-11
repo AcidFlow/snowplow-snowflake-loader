@@ -131,18 +131,7 @@ object Loader {
   /** Create INSERT statement to load Processed Run Id */
   def getInsertStatement(config: Config, folder: RunId.ProcessedRunId): Insert = {
     val tableColumns = getColumns(folder.shredTypes)
-    val castedColumns = tableColumns.map {
-      // Truncate problematic columns (#55)
-      case ("page_title", Varchar(Some(_))) => Select.CastedColumn(Defaults.TempTableColumn, "page_title", Varchar(None), Some(Substring(1, 2000)))
-      case ("page_referrer", Varchar(Some(_))) => Select.CastedColumn(Defaults.TempTableColumn, "page_referrer", Varchar(None), Some(Substring(1, 4096)))
-      case ("page_urlpath", Varchar(Some(_))) => Select.CastedColumn(Defaults.TempTableColumn, "page_urlpath", Varchar(None), Some(Substring(1, 3000)))
-      case ("refr_term", Varchar(Some(_))) => Select.CastedColumn(Defaults.TempTableColumn, "refr_term", Varchar(None), Some(Substring(1, 255)))
-      case ("mkt_clickid", Varchar(Some(_))) => Select.CastedColumn(Defaults.TempTableColumn, "mkt_clickid", Varchar(None), Some(Substring(1, 128)))
-      // Remove VARCHAR precision (#54)
-      case (name, Varchar(Some(_))) => Select.CastedColumn(Defaults.TempTableColumn, name, Varchar(None))
-      case (name, Char(_)) => Select.CastedColumn(Defaults.TempTableColumn, name, Varchar(None))
-      case (name, dataType) => Select.CastedColumn(Defaults.TempTableColumn, name, dataType)
-    }
+    val castedColumns = tableColumns.map { case (name, dataType) => Select.CastedColumn(Defaults.TempTableColumn, name, dataType) }
     val tempTable = getTempTable(folder.runIdFolder, config.schema)
     val source = Select(castedColumns, tempTable.schema, tempTable.name)
     Insert.InsertQuery(config.schema, Defaults.Table, tableColumns.map(_._1), source)
