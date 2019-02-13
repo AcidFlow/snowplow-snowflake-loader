@@ -14,25 +14,39 @@ package com.snowplowanalytics.snowflake.loader
 
 import ast._
 import com.snowplowanalytics.snowflake.core.Config
+import com.snowplowanalytics.snowflake.core.Config.SetupSteps
 import connection.Jdbc
 
 /** Module containing functions to setup Snowflake table for Enriched events */
 object Initializer {
 
   /** Run setup process */
-  def run(config: Config): Unit = {
+  def run(config: Config, skip: Set[SetupSteps.Value]): Unit = {
     val connection = Jdbc.getConnection(config)
 
     // Save only static credentials
     val credentials = PasswordService.getSetupCredentials(config.auth)
 
-    Jdbc.executeAndOutput(connection, CreateSchema(config.schema))
-    Jdbc.executeAndOutput(connection, AtomicDef.getTable(config.schema))
-    Jdbc.executeAndOutput(connection, CreateWarehouse(config.warehouse, size = Some(CreateWarehouse.XSmall), autoSuspend = Some(300), autoResume = Some(true)))
-    Jdbc.executeAndOutput(connection, CreateFileFormat.CreateJsonFormat(Defaults.FileFormat))
-    Jdbc.executeAndOutput(connection, CreateStage(
-      config.stage, config.stageUrl, Defaults.FileFormat, config.schema, credentials))
+    if (!skip.contains(SetupSteps.schema)) {
+      Jdbc.executeAndOutput(connection, CreateSchema(config.schema))
+    }
 
+    if (!skip.contains(SetupSteps.table)) {
+      Jdbc.executeAndOutput(connection, AtomicDef.getTable(config.schema))
+    }
+
+    if (!skip.contains(SetupSteps.warehouse)) {
+      Jdbc.executeAndOutput(connection, CreateWarehouse(config.warehouse, size = Some(CreateWarehouse.XSmall), autoSuspend = Some(300), autoResume = Some(true)))
+    }
+
+    if (!skip.contains(SetupSteps.fileformat)) {
+      Jdbc.executeAndOutput(connection, CreateFileFormat.CreateJsonFormat(Defaults.FileFormat))
+    }
+
+    if (!skip.contains(SetupSteps.stage)) {
+      Jdbc.executeAndOutput(connection, CreateStage(config.stage, config.stageUrl, Defaults.FileFormat, config.schema, credentials))
+    }
+    
     connection.close()
   }
 }
