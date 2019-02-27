@@ -101,6 +101,7 @@ object BuildSettings {
       case x if x.endsWith(".html") => MergeStrategy.discard
       case x if x.endsWith("public-suffix-list.txt") => MergeStrategy.last
       case PathList("org", "apache", "spark", "unused", tail@_*) => MergeStrategy.first
+      case PathList("com", "github", "fge", tail@_*) => MergeStrategy.first
       case x =>
         val oldStrategy = (assemblyMergeStrategy in assembly).value
         oldStrategy(x)

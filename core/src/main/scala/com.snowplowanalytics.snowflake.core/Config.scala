@@ -76,7 +76,7 @@ object Config {
   case class CliLoaderConfiguration(command: Command, loaderConfig: Config, loaderVersion: String, skip: Set[SetupSteps], dryRun: Boolean)
 
   case class RawCliTransformer(loaderConfig: String, resolver: String, eventsManifestConfig: Option[String], inbatch: Boolean)
-  case class CliTransformerConfiguration(loaderConfig: Config, eventsManifestConfig: Option[DynamoDbConfig], inbatch: Boolean)
+  case class CliTransformerConfiguration(loaderConfig: Config, resolver: Resolver, eventsManifestConfig: Option[DynamoDbConfig], inbatch: Boolean)
 
   /** Available methods to authenticate Snowflake loading */
   sealed trait AuthMethod
@@ -170,7 +170,7 @@ object Config {
           .map { x => Some(x) }
         case None => Right(None)
       }
-    } yield CliTransformerConfiguration(config, eventsManifestConfig, rawConfig.inbatch)
+    } yield CliTransformerConfiguration(config, resolver, eventsManifestConfig, rawConfig.inbatch)
   }
 
 

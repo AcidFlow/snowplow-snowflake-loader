@@ -12,15 +12,22 @@
  */
 package com.snowplowanalytics.snowflake.transformer
 
-import com.snowplowanalytics.snowflake.core.{Config, ProcessManifest}
+import org.json4s.jackson.JsonMethods._
 
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.SparkSession
 
+import scalaz.{Failure, Success}
+
+import com.snowplowanalytics.iglu.schemaddl.jsonschema.Schema
+import com.snowplowanalytics.iglu.schemaddl.jsonschema.json4s.implicits.json4sToSchema
+
+import com.snowplowanalytics.snowflake.core.{Config, ProcessManifest}
+
 object Main {
   def main(args: Array[String]): Unit = {
     Config.parseTransformerCli(args) match {
-      case Some(Right(Config.CliTransformerConfiguration(appConfig, eventsManifestConfig, inbatch))) =>
+      case Some(Right(Config.CliTransformerConfiguration(appConfig, resolver, eventsManifestConfig, inbatch))) =>
 
         // Always use EMR Role role for manifest-access
         val s3 = ProcessManifest.getS3(appConfig.awsRegion)
@@ -37,10 +44,24 @@ object Main {
         // Get run folders that are not in RunManifest in any form
         val runFolders = manifest.getUnprocessed(appConfig.manifest, appConfig.input)
 
+        // Get Atomic schema from Iglu
+        val atomic = resolver.lookupSchema("iglu:com.snowplowanalytics.snowplow/atomic/jsonschema/1-0-0") match {
+          case Success(jsonSchema) => Schema.parse(fromJsonNode(jsonSchema)) match {
+            case Some(schema) => schema
+            case None =>
+              println("Atomic event schema was invalid")
+              sys.exit(1)
+          }
+          case Failure(error) =>
+            println("Cannot get atomic event schema")
+            println(error)
+            sys.exit(1)
+        }
+
         runFolders match {
           case Right(folders) =>
             val configs = folders.map(TransformerJobConfig(appConfig.input, appConfig.stageUrl, _))
-            TransformerJob.run(spark, manifest, appConfig.manifest, configs, eventsManifestConfig, inbatch)
+            TransformerJob.run(spark, manifest, appConfig.manifest, configs, eventsManifestConfig, inbatch, atomic)
           case Left(error) =>
             println("Cannot get list of unprocessed folders")
             println(error)
