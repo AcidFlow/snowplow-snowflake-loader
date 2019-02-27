@@ -45,7 +45,8 @@ lazy val transformer = project
     libraryDependencies ++= Seq(
       Dependencies.hadoop,
       Dependencies.spark,
-      Dependencies.sparkSql
+      Dependencies.sparkSql,
+      Dependencies.schemaDdl
     ) ++ commonDependencies
   )
   .dependsOn(core)

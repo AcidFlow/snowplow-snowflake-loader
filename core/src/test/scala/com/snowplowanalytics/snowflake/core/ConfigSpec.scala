@@ -13,9 +13,14 @@
 package com.snowplowanalytics.snowflake.core
 
 import org.specs2.Specification
+
+import com.snowplowanalytics.iglu.client.Resolver
+import com.snowplowanalytics.iglu.client.repositories.{HttpRepositoryRef, RepositoryRefConfig}
+
+import com.snowplowanalytics.snowplow.eventsmanifest.DynamoDbConfig
+
 import com.snowplowanalytics.snowflake.core.Config.S3Folder.{coerce => s3}
 import com.snowplowanalytics.snowflake.core.Config.{CliLoaderConfiguration, CliTransformerConfiguration, SetupSteps}
-import com.snowplowanalytics.snowplow.eventsmanifest.DynamoDbConfig
 
 class ConfigSpec extends Specification {
   def is =
@@ -310,6 +315,19 @@ class ConfigSpec extends Specification {
         database = "test_db",
         maxError = None,
         jdbcHost = None),
+      Resolver(
+        cacheSize = 5,
+        repos = List(
+          HttpRepositoryRef(
+            config = RepositoryRefConfig(
+              name = "Iglu Central base64",
+              instancePriority = 0,
+              vendorPrefixes = List("com.snowplowanalytics")
+            ),
+            uri = "http://iglucentral.com",
+            apikey = None
+          ))
+      ),
       Some(DynamoDbConfig(
         name = "local",
         auth = Some(DynamoDbConfig.CredentialsAuth(
