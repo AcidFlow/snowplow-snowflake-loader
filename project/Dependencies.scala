@@ -28,6 +28,7 @@ object Dependencies {
     val enumeratum       = "1.5.13"
     val igluClient       = "0.5.0"
     val eventsManifest   = "0.1.0"
+    val schemaDdl        = "0.9.0"
     // Scala (test only)
     val specs2           = "2.3.13"
     val scalazSpecs2     = "0.2"
@@ -52,6 +53,7 @@ object Dependencies {
   val enumeratum       = "com.beachape"          %% "enumeratum"                   % V.enumeratum
   val igluClient       = "com.snowplowanalytics" %% "iglu-scala-client"            % V.igluClient
   val eventsManifest   = "com.snowplowanalytics" %% "snowplow-events-manifest"     % V.eventsManifest
+  val schemaDdl        = "com.snowplowanalytics" %% "schema-ddl"                   % V.schemaDdl
 
   // Scala (test only)
   val specs2           = "org.specs2"            %% "specs2"                       % V.specs2         % "test"
