@@ -1,3 +1,8 @@
+Version 0.4.2 (2019-03-01)
+--------------------------
+Truncate string values exceeding column's limits (#42)
+Bump Scala Analytics SDK to 0.4.0 (#73)
+
 Version 0.4.1 (2019-02-22)
 --------------------------
 Make it possible to selectively skip setup steps (#78)
