@@ -10,11 +10,13 @@
  * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the Apache License Version 2.0 for the specific language governing permissions and limitations there under.
  */
-package com.snowplowanalytics.snowflake.transformer
+package com.snowplowanalytics.snowflake.transformer.good
 
 // java
 import java.time.Instant
 import java.util.UUID
+
+import com.snowplowanalytics.snowflake.transformer.Transformer
 
 // json4s
 import org.json4s.jackson.JsonMethods.fromJsonNode
@@ -23,9 +25,9 @@ import org.json4s.jackson.JsonMethods.fromJsonNode
 import scalaz.{Failure, Success}
 
 // circe
-import io.circe.{Json, JsonObject}
-import io.circe.syntax._
 import io.circe.parser._
+import io.circe.syntax._
+import io.circe.{Json, JsonObject}
 
 // specs2
 import org.specs2.Specification
@@ -43,14 +45,7 @@ import com.snowplowanalytics.iglu.schemaddl.jsonschema.json4s.implicits.json4sTo
 // This library
 import com.snowplowanalytics.snowflake.core.Config
 
-class TransformerSpec extends Specification {
-
-  def is =
-    s2"""
-  Correctly truncate event fields $e1
-  Correctly transform event to shredded key/JSON pair $e2
-  """
-
+object TransformerSpec {
   val resolverBase64 = "eyJzY2hlbWEiOiJpZ2x1OmNvbS5zbm93cGxvd2FuYWx5dGljcy5pZ2x1L3Jlc29sdmVyLWNvbmZpZy9qc29uc2NoZW1hLzEtMC0xIiwiZGF0YSI6eyJjYWNoZVNpemUiOjUsInJlcG9zaXRvcmllcyI6W3sibmFtZSI6IklnbHUgQ2VudHJhbCBiYXNlNjQiLCJwcmlvcml0eSI6MCwidmVuZG9yUHJlZml4ZXMiOlsiY29tLnNub3dwbG93YW5hbHl0aWNzIl0sImNvbm5lY3Rpb24iOnsiaHR0cCI6eyJ1cmkiOiJodHRwOi8vaWdsdWNlbnRyYWwuY29tIn19fV19fQ=="
 
   val resolver = Config.parseJsonFile(resolverBase64, true) match {
@@ -297,29 +292,7 @@ class TransformerSpec extends Specification {
     true_tstamp = Some(Instant.parse("2013-11-26T00:03:57.886Z"))
   )
 
-  def e1 = {
-    // truncateFields must not break event structure if all fields are in order
-    Transformer.truncateFields(event.toJson(true), atomic) mustEqual event.toJson(true)
-
-    // truncateFields must truncate specific long fields to length from atomic schema
-    Transformer.truncateFields(event.copy(v_collector = "a" * 200).toJson(true), atomic) mustEqual event.copy(v_collector = "a" * 100).toJson(true)
-    Transformer.truncateFields(event.copy(geo_region = Some("12345")).toJson(true), atomic) mustEqual event.copy(geo_region = Some("123")).toJson(true)
-    Transformer.truncateFields(event.toJson(true), atomic + ("app_id" -> Some(5))) mustEqual event.copy(app_id = Some("angry")).toJson(true)
-  }
-
-
-  def e2 = {
-    val transformed = Transformer.transform(event, None, atomicSchema).getOrElse(throw new RuntimeException("Transformed event must be Some"))
-
-    // transform must have valid shredded types
-    transformed._1 mustEqual Set(
-      "contexts_org_schema_web_page_1",
-      "contexts_org_w3_performance_timing_1",
-      "contexts_com_snowplowanalytics_snowplow_ua_parser_context_1",
-      "unstruct_event_com_snowplowanalytics_snowplow_link_click_1"
-    )
-
-    val expectedJson = parse("""{
+  val expectedJson = parse("""{
         "geo_location" : "37.443604,-122.4124",
         "app_id" : "angry-birds",
         "platform" : "web",
@@ -499,6 +472,38 @@ class TransformerSpec extends Specification {
         "event_fingerprint": "e3dbfa9cca0412c3d4052863cefb547f",
         "true_tstamp": "2013-11-26T00:03:57.886Z"
       }""")
+}
+
+class TransformerSpec extends Specification {
+  import TransformerSpec._
+
+  def is =
+    s2"""
+  Correctly truncate event fields $e1
+  Correctly transform event to shredded key/JSON pair $e2
+  """
+
+  def e1 = {
+    // truncateFields must not break event structure if all fields are in order
+    Transformer.truncateFields(event.toJson(true), atomic) mustEqual event.toJson(true)
+
+    // truncateFields must truncate specific long fields to length from atomic schema
+    Transformer.truncateFields(event.copy(v_collector = "a" * 200).toJson(true), atomic) mustEqual event.copy(v_collector = "a" * 100).toJson(true)
+    Transformer.truncateFields(event.copy(geo_region = Some("12345")).toJson(true), atomic) mustEqual event.copy(geo_region = Some("123")).toJson(true)
+    Transformer.truncateFields(event.toJson(true), atomic + ("app_id" -> Some(5))) mustEqual event.copy(app_id = Some("angry")).toJson(true)
+  }
+
+
+  def e2 = {
+    val transformed = Transformer.transform(event, atomicSchema)
+
+    // transform must have valid shredded types
+    transformed._1 mustEqual Set(
+      "contexts_org_schema_web_page_1",
+      "contexts_org_w3_performance_timing_1",
+      "contexts_com_snowplowanalytics_snowplow_ua_parser_context_1",
+      "unstruct_event_com_snowplowanalytics_snowplow_link_click_1"
+    )
 
     // transform must have atomic event with fields identical to expected
     // (but not necessarily the same field ordering)

@@ -21,8 +21,8 @@ import scalaz.{Failure, Success}
 
 import com.snowplowanalytics.iglu.schemaddl.jsonschema.Schema
 import com.snowplowanalytics.iglu.schemaddl.jsonschema.json4s.implicits.json4sToSchema
-
 import com.snowplowanalytics.snowflake.core.{Config, ProcessManifest}
+import com.snowplowanalytics.snowflake.transformer.TransformerJobConfig.S3Config
 
 object Main {
   def main(args: Array[String]): Unit = {
@@ -60,7 +60,7 @@ object Main {
 
         runFolders match {
           case Right(folders) =>
-            val configs = folders.map(TransformerJobConfig(appConfig.input, appConfig.stageUrl, _))
+            val configs = folders.map(S3Config(appConfig.input, appConfig.stageUrl, appConfig.badOutputUrl, _))
             TransformerJob.run(spark, manifest, appConfig.manifest, configs, eventsManifestConfig, inbatch, atomic)
           case Left(error) =>
             println("Cannot get list of unprocessed folders")

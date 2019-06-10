@@ -14,20 +14,17 @@ package com.snowplowanalytics.snowflake.core
 
 import scala.io.Source
 import scala.util.control.NonFatal
-
 import java.io.File
 import java.util.Base64
 
 import cats.implicits._
-
 import org.json4s.JsonAST.{JInt, JNull}
 import org.json4s.{CustomSerializer, JObject, JString, JValue, MappingException}
 import org.json4s.jackson.JsonMethods.parse
-
 import enumeratum._
-
 import com.snowplowanalytics.iglu.client.Resolver
 import com.snowplowanalytics.iglu.client.validation.ValidatableJValue.validate
+import com.snowplowanalytics.iglu.core.{SchemaKey, SchemaVer}
 import com.snowplowanalytics.snowflake.generated.ProjectMetadata
 import com.snowplowanalytics.snowplow.eventsmanifest.DynamoDbConfig
 
@@ -40,6 +37,7 @@ case class Config(
   snowflakeRegion: String,
   stage: String,
   stageUrl: Config.S3Folder,
+  badOutputUrl: Option[Config.S3Folder],
   input: Config.S3Folder,
   username: String,
   password: Config.PasswordConfig,
@@ -52,6 +50,8 @@ case class Config(
 )
 
 object Config {
+
+  val ConfigSchema = SchemaKey("com.snowplowanalytics.snowplow.storage", "snowflake_config", "jsonschema", SchemaVer.Full(1, 0, 2))
 
   sealed trait Command
   case object LoadCommand extends Command
@@ -306,13 +306,13 @@ object Config {
       case _                          => Right(appendTrailingSlash(fixPrefix(s)))
     }
 
-    def coerce(s: String) = parse(s) match {
+    def coerce(s: String): Config.S3Folder = parse(s) match {
       case Right(f) => f
       case Left(error) => throw new IllegalArgumentException(error)
     }
   }
 
-  class S3Folder(val path: String) extends AnyVal {
+  case class S3Folder(path: String) {
     /** Split valid S3 folder path to bucket and path */
     def splitS3Folder: (String, String) =
       stripS3Prefix(path).split("/").toList match {
@@ -325,6 +325,7 @@ object Config {
       stripS3Prefix(path).startsWith(stripS3Prefix(other.toString))
 
     override def toString: String = path
+
   }
 
   implicit val s3folderReads = scopt.Read.reads(S3Folder.coerce)

@@ -1,5 +1,5 @@
 {
-  "schema": "iglu:com.snowplowanalytics.snowplow.storage/snowflake_config/jsonschema/1-0-0",
+  "schema": "iglu:com.snowplowanalytics.snowplow.storage/snowflake_config/jsonschema/1-0-2",
   "data": {
     "name": "Snowflake",
     "auth": {
@@ -13,6 +13,7 @@
     "input": "s3://snowflake/input/",
     "stage": "some_stage",
     "stageUrl": "s3://snowflake/output/",
+    "badOutputUrl": "s3://badRows/output/",
     "warehouse": "snowplow_wh",
     "schema": "atomic",
     "account": "snowplow",

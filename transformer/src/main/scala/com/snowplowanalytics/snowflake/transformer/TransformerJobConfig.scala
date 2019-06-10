@@ -14,17 +14,37 @@ package com.snowplowanalytics.snowflake.transformer
 
 import com.snowplowanalytics.snowflake.core.Config._
 
-case class TransformerJobConfig(enrichedArchive: S3Folder, snowflakeOutput: S3Folder, runId: String) {
-  def input: String = {
-    val (enrichedBucket, enrichedPath) = enrichedArchive.splitS3Folder
-    s"s3a://$enrichedBucket/$enrichedPath$runIdFolder/*"
-  }
-
-  def output: String = {
-    val (bucket, path) = snowflakeOutput.splitS3Folder
-    s"s3a://$bucket/$path$runIdFolder"
-  }
-
-  def runIdFolder: String = runId.split("/").last
+sealed trait TransformerJobConfig {
+  def input: String
+  def goodOutput: String
+  def badOutput: Option[String]
+  def runId: String
 }
 
+object TransformerJobConfig {
+
+  case class S3Config(enrichedArchive: S3Folder, snowflakeOutput: S3Folder, badOutputFolder: Option[S3Folder], runId: String) extends TransformerJobConfig {
+    def input: String = {
+      val (enrichedBucket, enrichedPath) = enrichedArchive.splitS3Folder
+      s"s3a://$enrichedBucket/$enrichedPath$runIdFolder/*"
+    }
+
+    def goodOutput: String = {
+      val (bucket, path) = snowflakeOutput.splitS3Folder
+      s"s3a://$bucket/$path$runIdFolder"
+    }
+
+    def badOutput: Option[String] = {
+      badOutputFolder.map { o =>
+        val (bucket, path) = o.splitS3Folder
+        s"s3a://$bucket/$path$runIdFolder"
+      }
+    }
+
+    def runIdFolder: String = runId.split("/").last
+  }
+
+  case class FSConfig(input: String, goodOutput: String, badOutput: Option[String]) extends TransformerJobConfig {
+    def runId: String = "fs-run-id"
+  }
+}
