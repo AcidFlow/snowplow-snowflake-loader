@@ -29,6 +29,7 @@ object Dependencies {
     val igluClient       = "0.5.0"
     val eventsManifest   = "0.1.0"
     val schemaDdl        = "0.9.0"
+    val circe            = "0.11.1"
     // Scala (test only)
     val specs2           = "2.3.13"
     val scalazSpecs2     = "0.2"
@@ -54,6 +55,9 @@ object Dependencies {
   val igluClient       = "com.snowplowanalytics" %% "iglu-scala-client"            % V.igluClient
   val eventsManifest   = "com.snowplowanalytics" %% "snowplow-events-manifest"     % V.eventsManifest
   val schemaDdl        = "com.snowplowanalytics" %% "schema-ddl"                   % V.schemaDdl
+  val circeCore        = "io.circe"              %% "circe-core"                   % V.circe          % "test"
+  val circeLiteral     = "io.circe"              %% "circe-literal"                % V.circe          % "test"
+
 
   // Scala (test only)
   val specs2           = "org.specs2"            %% "specs2"                       % V.specs2         % "test"

@@ -12,54 +12,63 @@
  */
 package com.snowplowanalytics.snowflake.transformer
 
-// java
 import java.util.UUID
 
-// circe
+import scala.util.control.NonFatal
+
 import io.circe.Json
 import io.circe.syntax._
 
-// cats
-import cats.data.Validated.{Invalid, Valid}
+import cats.syntax.either._
+import cats.data.NonEmptyList
 
-// schema-ddl
 import com.snowplowanalytics.iglu.schemaddl.jsonschema.Schema
-
-// scala-analytics-sdk
 import com.snowplowanalytics.snowplow.analytics.scalasdk.{Event, SnowplowEvent}
-
-// events-manifest
+import com.snowplowanalytics.snowflake.transformer.BadRow.Failure
 import com.snowplowanalytics.snowplow.eventsmanifest.EventsManifest
-import com.snowplowanalytics.snowplow.eventsmanifest.EventsManifest.EventsManifestConfig
-
-// This library
-import com.snowplowanalytics.snowflake.transformer.singleton.EventsManifestSingleton
 
 object Transformer {
 
   /**
     * Transform jsonified TSV to pair of shredded keys and enriched event in JSON format
     *
-    * @param event                Event case class instance
-    * @param eventsManifestConfig events manifest config instance
+    * @param event Event case class instance
     * @return pair of set with column names and JValue
     */
-  def transform(event: Event, eventsManifestConfig: Option[EventsManifestConfig], atomicSchema: Schema): Option[(Set[String], String)] = {
+  def transform(event: Event, atomicSchema: Schema): (Set[String], String) = {
     val shredTypes = event.inventory.map(item => SnowplowEvent.transformSchema(item.shredProperty, item.schemaKey))
-    val eventId = event.event_id.toString
-    val eventFingerprint = event.event_fingerprint.getOrElse(UUID.randomUUID().toString)
-    val etlTstamp = event.etl_tstamp.map(i => EventsManifest.RedshiftTstampFormatter.format(i))
-      .getOrElse(throw new RuntimeException(s"etl_tstamp in event $eventId is empty or missing"))
     val atomic = atomicSchema.properties.map { properties => properties.value.mapValues { property =>
       property.maxLength.map {_.value.intValue}
     }}.getOrElse(throw new RuntimeException(s"Could not convert atomic schema to property map"))
+    (shredTypes, truncateFields(event.toJson(true), atomic).noSpaces)
+  }
 
-    EventsManifestSingleton.get(eventsManifestConfig) match {
-      case Some(manifest) =>
-        if (manifest.put(eventId, eventFingerprint, etlTstamp)) {
-          Some((shredTypes, truncateFields(event.toJson(true), atomic).noSpaces))
-        } else None
-      case None => Some((shredTypes, truncateFields(event.toJson(true), atomic).noSpaces))
+  /**
+    * Try to store event components in duplicate storage and check if it was stored before
+    * If event is unique in storage - true will be returned,
+    * If event is already in storage, with different etlTstamp - false will be returned,
+    * If event is already in storage, but with same etlTstamp - true will be returned (previous shredding was interrupted),
+    * If storage is not configured - true will be returned.
+    * If provisioned throughput exception happened - interrupt whole job
+    * If other runtime exception happened - failure is returned to be used as bad row
+    * @param event whole enriched event with possibly faked fingerprint
+    * @param duplicateStorage object dealing with possible duplicates
+    * @return boolean inside validation, denoting presence or absence of event in storage
+    */
+  def dedupeCrossBatch(event: Event, duplicateStorage: Option[EventsManifest]): Either[BadRow, Boolean] = {
+    duplicateStorage match {
+      case Some(storage) =>
+        try {
+          val eventId = event.event_id.toString
+          val eventFingerprint = event.event_fingerprint.getOrElse(UUID.randomUUID().toString)
+          val etlTstamp = event.etl_tstamp.map(i => EventsManifest.RedshiftTstampFormatter.format(i))
+            .getOrElse(throw new RuntimeException(s"etl_tstamp in event $eventId is empty or missing"))
+          Right(storage.put(eventId, eventFingerprint, etlTstamp))
+        } catch {
+          case NonFatal(e) =>
+            Left(BadRow.SnowflakeFailure(event, NonEmptyList.one(Failure.DeduplicationError(Option(e.getMessage).getOrElse(e.toString)))))
+        }
+      case _ => Right(true)
     }
   }
 
@@ -69,11 +78,10 @@ object Transformer {
     * @param line enriched event TSV
     * @return Event case class instance
     */
-  def jsonify(line: String): Event = {
-    Event.parse(line) match {
-      case Valid(event) => event
-      case Invalid(e) => throw new RuntimeException(e.toList.mkString("\n"))
-    }
+  def jsonify(line: String): Either[BadRow, Event] = {
+    Event.parse(line)
+      .toEither
+      .leftMap(errors => BadRow.ParsingFailure(line, errors))
   }
 
   /**
@@ -91,4 +99,5 @@ object Transformer {
       case other => other
     })
   }
+
 }

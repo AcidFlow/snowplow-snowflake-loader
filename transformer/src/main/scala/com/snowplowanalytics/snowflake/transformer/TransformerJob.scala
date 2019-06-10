@@ -12,12 +12,14 @@
  */
 package com.snowplowanalytics.snowflake.transformer
 
-import org.apache.spark.sql.{SaveMode, SparkSession}
-
+import org.apache.spark.sql.{Row, SaveMode, SparkSession}
+import org.apache.spark.sql.types.{StringType, StructField, StructType}
+import cats.syntax.either._
 import com.snowplowanalytics.iglu.schemaddl.jsonschema.Schema
-
-import com.snowplowanalytics.snowflake.core.ProcessManifest
 import com.snowplowanalytics.snowplow.eventsmanifest.EventsManifest.EventsManifestConfig
+import com.snowplowanalytics.snowplow.analytics.scalasdk.Event
+import com.snowplowanalytics.snowflake.core.ProcessManifest
+import com.snowplowanalytics.snowflake.transformer.singleton.EventsManifestSingleton
 
 object TransformerJob {
 
@@ -27,7 +29,7 @@ object TransformerJob {
       println(s"Snowflake Transformer: processing ${jobConfig.runId}. ${System.currentTimeMillis()}")
       manifest.add(tableName, jobConfig.runId)
       val shredTypes = process(spark, jobConfig, eventsManifestConfig, inbatch, atomicSchema)
-      manifest.markProcessed(tableName, jobConfig.runId, shredTypes, jobConfig.output)
+      manifest.markProcessed(tableName, jobConfig.runId, shredTypes, jobConfig.goodOutput)
       println(s"Snowflake Transformer: processed ${jobConfig.runId}. ${System.currentTimeMillis()}")
     }
   }
@@ -46,33 +48,82 @@ object TransformerJob {
   def process(spark: SparkSession, jobConfig: TransformerJobConfig, eventsManifestConfig: Option[EventsManifestConfig], inbatch: Boolean, atomicSchema: Schema) = {
     import spark.implicits._
 
+    // Decide whether bad rows will be stored or not
+    // If badOutput is supplied in the config, bad rows
+    // need to be stored to given URL
+    val badRowStored: Boolean = jobConfig.badOutput.isDefined
+
     val sc = spark.sparkContext
     val keysAggregator = new StringSetAccumulator
     sc.register(keysAggregator)
 
-    val events = sc
+    val inputRDD = sc
       .textFile(jobConfig.input)
-      .map { e => Transformer.jsonify(e) }
-    val dedupedEvents = if (inbatch) {
-      events
+      .map(l => applyOpsWithPotentialError(l, eventsManifestConfig))
+      .cache()
+
+    // Check if bad rows should be stored in case of error.
+    // If bad rows need to be stored continue execution,
+    // if bad rows not need to be stored, throw exception
+    val withoutError = inputRDD
+      .flatMap {
+        _.leftMap { e =>
+          if (badRowStored) e else throw new RuntimeException(e.toCompactJson)
+        }.toOption
+      }
+      .flatMap(e => e)
+
+    // Deduplicate the events in a batch if inbatch flagged set
+    val inBatchDedupedEvents = if (inbatch) {
+      withoutError
         .groupBy { e => (e.event_id, e.event_fingerprint) }
         .flatMap { case (_, vs) => vs.take(1) }
-    } else events
-    val snowflake = dedupedEvents.flatMap { e =>
-      Transformer.transform(e, eventsManifestConfig, atomicSchema) match {
-        case Some((keys, transformed)) =>
+    } else withoutError
+
+    val transformedEvents = inBatchDedupedEvents.map { e =>
+      Transformer.transform(e, atomicSchema) match {
+        case (keys, transformed) =>
           keysAggregator.add(keys)
-          Some(transformed)
-        case None => None
+          transformed
       }
     }
 
     // DataFrame is used only for S3OutputFormat
-    snowflake.toDF.write.mode(SaveMode.Append).text(jobConfig.output)
+    transformedEvents
+      .toDF
+      .write
+      .mode(SaveMode.Append)
+      .text(jobConfig.goodOutput)
+
+    jobConfig.badOutput.foreach { badOutput =>
+      val withError = inputRDD
+        .flatMap(_.swap.toOption)
+        .map(e => Row(e.toCompactJson))
+      spark.createDataFrame(withError, StructType(StructField("_", StringType, true) :: Nil))
+        .write
+        .mode(SaveMode.Overwrite)
+        .text(badOutput)
+    }
 
     val keysFinal = keysAggregator.value.toList
-    println(s"Shred types for  ${jobConfig.runId}: " + keysFinal.mkString(", "))
     keysAggregator.reset()
     keysFinal
+  }
+
+  /**
+    * Apply operations which can output bad row
+    * @param line line to process
+    * @param eventsManifestConfig events manifest config instance
+    * @return Left(BadRow) in case of error in one of the operations or
+    *         Right(Some(event)) in case of event is not duplicated with another one
+    *         in the another batch or Right(None) if event is duplicated.
+    */
+  private def applyOpsWithPotentialError(line: String,  eventsManifestConfig: Option[EventsManifestConfig]): Either[BadRow, Option[Event]] = {
+    for {
+      event <- Transformer.jsonify(line)
+      sfErrChecked <- SnowflakeErrorCheck(event).toLeft(event)
+      crossBatchDeduped <- Transformer.dedupeCrossBatch(sfErrChecked, EventsManifestSingleton.get(eventsManifestConfig))
+        .map(t => if (t) Some(sfErrChecked) else None)
+    } yield crossBatchDeduped
   }
 }

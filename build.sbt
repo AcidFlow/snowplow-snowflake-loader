@@ -36,8 +36,10 @@ lazy val loader = project
 
 lazy val transformer = project
   .settings(moduleName := "snowplow-snowflake-transformer")
+  .settings(BuildSettings.scalifySettings)
   .settings(BuildSettings.assemblySettings)
   .settings(BuildSettings.buildSettings)
+  .settings(BuildSettings.dynamoDbSettings)
   .settings(
     resolvers ++= Seq(
       "Sonatype OSS Snapshots" at "http://oss.sonatype.org/content/repositories/snapshots/"
@@ -46,7 +48,9 @@ lazy val transformer = project
       Dependencies.hadoop,
       Dependencies.spark,
       Dependencies.sparkSql,
-      Dependencies.schemaDdl
+      Dependencies.schemaDdl,
+      Dependencies.circeCore,
+      Dependencies.circeLiteral
     ) ++ commonDependencies
   )
   .dependsOn(core)
