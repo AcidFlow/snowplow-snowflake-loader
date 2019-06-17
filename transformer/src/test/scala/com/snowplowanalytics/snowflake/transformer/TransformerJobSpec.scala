@@ -23,7 +23,6 @@ import scala.util.Random
 import org.apache.commons.io.FileUtils
 import org.apache.commons.io.filefilter.TrueFileFilter
 import org.apache.commons.io.filefilter.IOFileFilter
-
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.SparkSession
 
@@ -40,6 +39,7 @@ import com.snowplowanalytics.snowflake.core.Config
 import com.snowplowanalytics.snowflake.transformer.TransformerJobConfig.FSConfig
 import com.snowplowanalytics.snowplow.eventsmanifest.DynamoDbConfig
 
+import org.apache.spark.serializer.KryoSerializer
 import org.specs2.matcher.Matcher
 import org.specs2.matcher.Matchers._
 
@@ -217,6 +217,10 @@ trait TransformerJobSpec extends BeforeAfterAll {
   val conf: SparkConf = new SparkConf()
     .setMaster("local[1]")
     .setAppName(appName)
+    .set("spark.serializer", classOf[KryoSerializer].getName)
+    .set("spark.kryo.registrationRequired", "true")
+    .registerKryoClasses(TransformerJob.classesToRegister)
+
 
   var spark: SparkSession =
     SparkSession.builder()

@@ -12,19 +12,53 @@
  */
 package com.snowplowanalytics.snowflake.transformer
 
+import java.time.Instant
+
 import org.apache.spark.sql.{Row, SaveMode, SparkSession}
 import org.apache.spark.sql.types.{StringType, StructField, StructType}
 
 import cats.syntax.either._
 
+
 import io.circe.syntax._
 
+import com.snowplowanalytics.iglu.core.{SchemaKey, SelfDescribingData}
 import com.snowplowanalytics.iglu.schemaddl.jsonschema.Schema
 import com.snowplowanalytics.snowflake.core.ProcessManifest
 import com.snowplowanalytics.snowplow.eventsmanifest.EventsManifest.EventsManifestConfig
 import com.snowplowanalytics.snowflake.transformer.singleton.EventsManifestSingleton
+import com.snowplowanalytics.snowplow.analytics.scalasdk.Event
 
 object TransformerJob {
+
+  private[transformer] val classesToRegister: Array[Class[_]] = Array(
+    classOf[Array[String]],
+    classOf[SchemaKey],
+    classOf[SelfDescribingData[_]],
+    classOf[Event],
+    classOf[Instant],
+    classOf[com.snowplowanalytics.iglu.core.SchemaVer$Full],
+    classOf[io.circe.JsonObject$LinkedHashMapJsonObject],
+    classOf[io.circe.Json$JObject],
+    classOf[io.circe.Json$JString],
+    classOf[io.circe.Json$JArray],
+    classOf[io.circe.Json$JNull$],
+    classOf[io.circe.Json$JNumber],
+    classOf[io.circe.Json$JBoolean],
+    classOf[io.circe.Json],
+    Class.forName("io.circe.JsonLong"),
+    Class.forName("io.circe.JsonDecimal"),
+    Class.forName("io.circe.JsonBigDecimal"),
+    Class.forName("io.circe.JsonBiggerDecimal"),
+    Class.forName("io.circe.JsonDouble"),
+    Class.forName("io.circe.JsonFloat"),
+    classOf[java.util.LinkedHashMap[_, _]],
+    classOf[java.util.ArrayList[_]],
+    classOf[scala.collection.immutable.Map$EmptyMap$],
+    classOf[scala.collection.immutable.Set$EmptySet$],
+    classOf[org.apache.spark.internal.io.FileCommitProtocol$TaskCommitMessage],
+    classOf[org.apache.spark.sql.execution.datasources.FileFormatWriter$WriteTaskResult]
+  )
 
   /** Process all directories, saving state into DynamoDB */
   def run(spark: SparkSession, manifest: ProcessManifest, tableName: String, jobConfigs: List[TransformerJobConfig], eventsManifestConfig: Option[EventsManifestConfig], inbatch: Boolean, atomicSchema: Schema): Unit = {
