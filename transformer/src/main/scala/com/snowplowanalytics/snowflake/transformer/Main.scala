@@ -16,6 +16,7 @@ import org.json4s.jackson.JsonMethods._
 
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.SparkSession
+import org.apache.spark.serializer.KryoSerializer
 
 import scalaz.{Failure, Success}
 
@@ -23,6 +24,7 @@ import com.snowplowanalytics.iglu.schemaddl.jsonschema.Schema
 import com.snowplowanalytics.iglu.schemaddl.jsonschema.json4s.implicits.json4sToSchema
 import com.snowplowanalytics.snowflake.core.{Config, ProcessManifest}
 import com.snowplowanalytics.snowflake.transformer.TransformerJobConfig.S3Config
+
 
 object Main {
   def main(args: Array[String]): Unit = {
@@ -38,6 +40,8 @@ object Main {
         val config = new SparkConf()
           .setAppName("snowflake-transformer")
           .setIfMissing("spark.master", "local[*]")
+          .set("spark.serializer", classOf[KryoSerializer].getName)
+          .registerKryoClasses(TransformerJob.classesToRegister)
 
         val spark = SparkSession.builder().config(config).getOrCreate()
 
