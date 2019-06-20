@@ -116,7 +116,7 @@ object EventDeduplicationSpec {
     "domain_userid":"1f9b3980-6619-4d75-a6c9-8253c76c3bfb",
     "page_urlquery":null,
     "refr_term":null,
-    "refr_device_tstamp":null,
+    "refr_dvce_tstamp":null,
     "name_tracker":"blogTracker",
     "tr_tax_base":null,
     "dvce_screenheight":800,

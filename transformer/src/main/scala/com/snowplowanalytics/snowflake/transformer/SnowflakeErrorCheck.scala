@@ -47,7 +47,7 @@ object SnowflakeErrorCheck {
       lessThanZero(event.dvce_created_tstamp, "dvce_created_tstamp"),
       lessThanZero(event.dvce_sent_tstamp, "dvce_sent_tstamp"),
       lessThanZero(event.etl_tstamp, "etl_tstamp"),
-      lessThanZero(event.refr_device_tstamp, "refr_device_tstamp"),
+      lessThanZero(event.refr_dvce_tstamp, "refr_dvce_tstamp"),
       lessThanZero(event.true_tstamp, "true_tstamp")
     )
     errList.flatten.toNel.map(failures => SnowflakeFailure(event, failures))
