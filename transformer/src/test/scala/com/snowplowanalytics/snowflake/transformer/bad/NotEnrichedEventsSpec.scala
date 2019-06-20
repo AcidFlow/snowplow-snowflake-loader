@@ -80,7 +80,7 @@ object NotEnrichedEventsSpec {
         "Cannot parse key 'tr_shipping_base with value VALUE IS MISSING into double",
         "Cannot parse key 'ti_price_base with value VALUE IS MISSING into double",
         "Cannot parse key 'dvce_sent_tstamp with value VALUE IS MISSING into datetime",
-        "Cannot parse key 'refr_device_tstamp with value VALUE IS MISSING into datetime",
+        "Cannot parse key 'refr_dvce_tstamp with value VALUE IS MISSING into datetime",
         "ParsingFailure: expected json value got 'VALUE ...' (line 1, column 1)",
         "Cannot parse key 'derived_tstamp with value VALUE IS MISSING into datetime",
         "Cannot parse key 'true_tstamp with value VALUE IS MISSING into datetime"
@@ -142,7 +142,7 @@ object NotEnrichedEventsSpec {
         "Cannot parse key 'tr_shipping_base with value VALUE IS MISSING into double",
         "Cannot parse key 'ti_price_base with value VALUE IS MISSING into double",
         "Cannot parse key 'dvce_sent_tstamp with value VALUE IS MISSING into datetime",
-        "Cannot parse key 'refr_device_tstamp with value VALUE IS MISSING into datetime",
+        "Cannot parse key 'refr_dvce_tstamp with value VALUE IS MISSING into datetime",
         "ParsingFailure: expected json value got 'VALUE ...' (line 1, column 1)",
         "Cannot parse key 'derived_tstamp with value VALUE IS MISSING into datetime",
         "Cannot parse key 'true_tstamp with value VALUE IS MISSING into datetime"
@@ -204,7 +204,7 @@ object NotEnrichedEventsSpec {
         "Cannot parse key 'tr_shipping_base with value VALUE IS MISSING into double",
         "Cannot parse key 'ti_price_base with value VALUE IS MISSING into double",
         "Cannot parse key 'dvce_sent_tstamp with value VALUE IS MISSING into datetime",
-        "Cannot parse key 'refr_device_tstamp with value VALUE IS MISSING into datetime",
+        "Cannot parse key 'refr_dvce_tstamp with value VALUE IS MISSING into datetime",
         "ParsingFailure: expected json value got 'VALUE ...' (line 1, column 1)",
         "Cannot parse key 'derived_tstamp with value VALUE IS MISSING into datetime",
         "Cannot parse key 'true_tstamp with value VALUE IS MISSING into datetime"

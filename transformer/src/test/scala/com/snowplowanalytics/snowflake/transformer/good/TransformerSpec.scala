@@ -255,7 +255,7 @@ object TransformerSpec {
     etl_tags = None,
     dvce_sent_tstamp = None,
     refr_domain_userid = None,
-    refr_device_tstamp = None,
+    refr_dvce_tstamp = None,
     derived_contexts = Contexts(
       List(
         SelfDescribingData(
@@ -448,7 +448,7 @@ object TransformerSpec {
         "etl_tags" : null,
         "dvce_sent_tstamp" : null,
         "refr_domain_userid" : null,
-        "refr_device_tstamp" : null,
+        "refr_dvce_tstamp" : null,
         "contexts_com_snowplowanalytics_snowplow_ua_parser_context_1": [{
           "useragentFamily": "IE",
           "useragentMajor": "7",
