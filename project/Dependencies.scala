@@ -22,7 +22,7 @@ object Dependencies {
     // Scala
     val spark            = "2.2.0"
     val scopt            = "3.7.0"
-    val analyticsSdk     = "0.4.0"
+    val analyticsSdk     = "0.4.1"
     val json4sJackson    = "3.2.11"
     val cats             = "0.9.0"
     val enumeratum       = "1.5.13"
