@@ -1,3 +1,10 @@
+Version 0.5.0 (2019-x-x)
+--------------------------
+Common: remove 'Bump Snowflake JDBC driver to 3.6.22' entry from CHANGELOG (closes #71)
+Bump Snowplow Scala Analytics SDK to 0.4.1 (closes #87)
+Use explicit kryo class registration (closes #84)
+Integrate the storage transformation bad rows type (closes #85)
+
 Version 0.4.2 (2019-04-03)
 --------------------------
 Truncate string values exceeding column's limits (#42)
