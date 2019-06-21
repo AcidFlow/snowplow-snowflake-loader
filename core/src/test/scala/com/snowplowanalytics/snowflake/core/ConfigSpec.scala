@@ -49,6 +49,18 @@ class ConfigSpec extends Specification { def is = s2"""
       |   "data":{
       |      "cacheSize":500,
       |      "repositories":[
+|               {
+      |            "name":"Iglu Central Mirror",
+      |            "priority":0,
+      |            "vendorPrefixes":[
+      |               "com.snowplowanalytics"
+      |            ],
+      |            "connection":{
+      |               "http":{
+      |                  "uri":"http://18.195.229.140"
+      |               }
+      |            }
+      |         },
       |         {
       |            "name":"Iglu Central",
       |            "priority":0,
@@ -451,6 +463,15 @@ class ConfigSpec extends Specification { def is = s2"""
       Resolver(
         cacheSize = 500,
         repos = List(
+          HttpRepositoryRef(
+            config = RepositoryRefConfig(
+              name = "Iglu Central Mirror",
+              instancePriority = 0,
+              vendorPrefixes = List("com.snowplowanalytics")
+            ),
+            uri = "http://18.195.229.140",
+            apikey = None
+          ),
           HttpRepositoryRef(
             config = RepositoryRefConfig(
               name = "Iglu Central",
