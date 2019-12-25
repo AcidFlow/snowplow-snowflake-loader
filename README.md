@@ -13,14 +13,12 @@ Snowflake Loader is a project to load Snowplow enriched events into the [Snowfla
 
 ## Quickstart
 
-Assuming git, **[Vagrant][vagrant-install]** and **[VirtualBox][virtualbox-install]** installed:
+Assuming git and [SBT][sbt] installed:
 
 ```bash
-host$ git clone https://github.com/snowplow-product/snowplow-snowflake-loader.git
-host$ cd snowplow-snowflake-loader
-host$ vagrant up && vagrant ssh
-guest$ cd /vagrant
-guest$ sbt test
+$ git clone https://github.com/snowplow-incubator/snowplow-snowflake-loader.git
+$ cd snowplow-snowflake-loader
+$ sbt test
 ```
 
 ## Copyright and License
@@ -36,9 +34,6 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 
-[vagrant-install]: http://docs.vagrantup.com/v2/installation/index.html
-[virtualbox-install]: https://www.virtualbox.org/wiki/Downloads
-
 [license-image]: http://img.shields.io/badge/license-Apache--2-blue.svg?style=flat
 [license]: http://www.apache.org/licenses/LICENSE-2.0
 
@@ -47,6 +42,8 @@ limitations under the License.
 
 [release-image]: http://img.shields.io/badge/release-0.5.0-blue.svg?style=flat
 [releases]: https://github.com/snowplow/snowplowsnowflaketransformer/releases
+
+[sbt]: https://www.scala-sbt.org/
 
 [snowflake]: https://www.snowflake.com/
 
