@@ -12,24 +12,22 @@
  */
 package com.snowplowanalytics.snowflake.loader
 
-import  com.snowplowanalytics.snowflake.core.Config
+import  com.snowplowanalytics.snowflake.core.Cli
 
 object Main {
   def main(args: Array[String]): Unit = {
-    Config.parseLoaderCli(args) match {
-      case Some(Right(config @ Config.CliLoaderConfiguration(Config.LoadCommand, _, _, _, _))) =>
+    Cli.parse(args) match {
+      case Right(Cli.Loader.Load(config, dryRun)) =>
         println("Loading...")
-        Loader.run(config)
-      case Some(Right(config @ Config.CliLoaderConfiguration(Config.SetupCommand, _, _, skip, _))) =>
+        Loader.run(config, dryRun)
+      case Right(Cli.Loader.Setup(config, skip, _)) =>
         println("Setting up...")
-        Initializer.run(config.loaderConfig, skip)
-      case Some(Right(config @ Config.CliLoaderConfiguration(Config.MigrateCommand, _, loaderVersion, _, _))) =>
+        Initializer.run(config, skip)
+      case Right(Cli.Loader.Migrate(config, version, _)) =>
         println("Migrating...")
-        Migrator.run(config.loaderConfig, loaderVersion)
-      case Some(Left(error)) =>
-        println(error)
-        sys.exit(1)
-      case None =>
+        Migrator.run(config, version)
+      case Left(error) =>
+        System.err.println(error)
         sys.exit(1)
     }
   }

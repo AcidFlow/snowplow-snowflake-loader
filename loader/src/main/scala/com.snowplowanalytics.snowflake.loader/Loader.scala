@@ -115,15 +115,15 @@ object Loader {
   }
 
   /** Scan state from processing manifest, extract not-loaded folders and lot each of them */
-  def run(config: Config.CliLoaderConfiguration): Unit = {
-    if (config.dryRun) {
-      ProcessManifest.buildDynamoDb(config.loaderConfig.awsRegion)
-      exec(DryRun, new DryRun(), DryRunProcessingManifest, config.loaderConfig)
+  def run(config: Config, dryRun: Boolean): Unit = {
+    if (dryRun) {
+      ProcessManifest.buildDynamoDb(config.awsRegion)
+      exec(DryRun, new DryRun(), DryRunProcessingManifest, config)
     } else {
-      ProcessManifest.buildDynamoDb(config.loaderConfig.awsRegion)
+      ProcessManifest.buildDynamoDb(config.awsRegion)
       val manifest = AwsLoaderProcessingManifest
-      val connection = Jdbc.getConnection(config.loaderConfig)
-      exec(Jdbc, connection, manifest, config.loaderConfig)
+      val connection = Jdbc.getConnection(config)
+      exec(Jdbc, connection, manifest, config)
     }
     println("Success. Exiting...")
   }

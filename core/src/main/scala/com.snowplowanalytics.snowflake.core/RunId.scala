@@ -95,7 +95,7 @@ object RunId {
     val loadedBy = getLoadedBy(rawItem)
     val toSkip = getToSkip(rawItem)
 
-    val result = (runId |@| startedAt |@| processedAt |@| shredTypes |@| savedTo |@| loadedAt |@| addedBy |@| loadedBy |@| toSkip).map {
+    val result = (runId, startedAt, processedAt, shredTypes, savedTo, loadedAt, addedBy, loadedBy, toSkip).mapN {
       case (run, started, None, None, None, None, added, None, skip) =>
         FreshRunId(run, started, added, skip).asRight
       case (run, started, Some(processed), Some(shredded), Some(saved), None, added, None, skip) =>

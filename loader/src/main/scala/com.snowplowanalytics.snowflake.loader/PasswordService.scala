@@ -36,7 +36,7 @@ object PasswordService {
   /** Get credentials **only** if they're provided explicitly, use for `setup` */
   def getSetupCredentials(authMethod: Config.AuthMethod): Option[Common.AwsCreds] =
     authMethod match {
-      case Config.CredentialsAuth(accessKeyId, secretAccessKey) =>
+      case Config.AuthMethod.CredentialsAuth(accessKeyId, secretAccessKey) =>
         Some(Common.AwsCreds(accessKeyId, secretAccessKey, None))
       case _ => None
     }
@@ -44,13 +44,13 @@ object PasswordService {
   /** Get credentials by trying all possible ways: explicit, temporary, provider chain */
   def getLoadCredentials(authMethod: Config.AuthMethod): Either[CredentialsStatus, Common.AwsCreds] =
     authMethod match {
-      case Config.CredentialsAuth(accessKeyId, secretAccessKey) =>
+      case Config.AuthMethod.CredentialsAuth(accessKeyId, secretAccessKey) =>
         Right(Common.AwsCreds(accessKeyId, secretAccessKey, None))
-      case Config.RoleAuth(roleArn, sessionDuration) =>
+      case Config.AuthMethod.RoleAuth(roleArn, sessionDuration) =>
         getCredentialsForRole(roleArn, sessionDuration).map { creds =>
           Common.AwsCreds(creds.getAccessKeyId, creds.getSecretAccessKey, Option(creds.getSessionToken))
         }.leftMap(e => CredentialsFailure(e))
-      case Config.StageAuth => Left(NoCredentials)
+      case Config.AuthMethod.StageAuth => Left(NoCredentials)
     }
 
   /**

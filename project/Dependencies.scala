@@ -22,11 +22,12 @@ object Dependencies {
     // Scala
     val spark            = "2.2.0"
     val scopt            = "3.7.0"
+    val decline          = "1.0.0"
     val analyticsSdk     = "0.4.1"
     val json4sJackson    = "3.2.11"
     val cats             = "0.9.0"
     val enumeratum       = "1.5.13"
-    val igluClient       = "0.5.0"
+    val igluClient       = "0.6.2"
     val eventsManifest   = "0.1.0"
     val schemaDdl        = "0.9.0"
     val circe            = "0.11.1"
@@ -47,6 +48,7 @@ object Dependencies {
   // Scala
   val spark            = "org.apache.spark"      %% "spark-core"                   % V.spark          % "provided"
   val sparkSql         = "org.apache.spark"      %% "spark-sql"                    % V.spark          % "provided"
+  val decline          = "com.monovore"          %% "decline"                      % V.decline
   val scopt            = "com.github.scopt"      %% "scopt"                        % V.scopt
   val analyticsSdk     = "com.snowplowanalytics" %% "snowplow-scala-analytics-sdk" % V.analyticsSdk
   val json4sJackson    = "org.json4s"            %% "json4s-jackson"               % V.json4sJackson

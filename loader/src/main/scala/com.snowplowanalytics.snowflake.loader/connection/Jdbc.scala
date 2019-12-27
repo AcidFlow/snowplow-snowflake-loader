@@ -41,8 +41,8 @@ object Jdbc extends Connection[JdbcConnection] {
     val properties = new Properties()
 
     val password = config.password match {
-      case Config.PlainText(text) => text
-      case Config.EncryptedKey(Config.EncryptedConfig(key)) =>
+      case Config.PasswordConfig.PlainText(text) => text
+      case Config.PasswordConfig.EncryptedKey(Config.EncryptedConfig(key)) =>
         PasswordService.getKey(key.parameterName) match {
           case Right(result) => result
           case Left(error) =>

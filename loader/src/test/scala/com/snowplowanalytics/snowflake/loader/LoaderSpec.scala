@@ -63,7 +63,7 @@ class LoaderSpec extends Specification { def is = s2"""
 
   def e5 = {
     val config = Config(
-      auth = Config.CredentialsAuth(
+      auth = Config.AuthMethod.CredentialsAuth(
         accessKeyId = "accessKey",
         secretAccessKey = "secretKey"
       ),
@@ -74,7 +74,7 @@ class LoaderSpec extends Specification { def is = s2"""
       stageUrl = Config.S3Folder.coerce("s3://somestage/foo"),
       badOutputUrl = Some(Config.S3Folder.coerce("s3://someBadRows/foo")),
       username = "snowfplow-loader",
-      password = Config.PlainText("super-secret"),
+      password = Config.PasswordConfig.PlainText("super-secret"),
       input = Config.S3Folder.coerce("s3://snowflake/input/"),
       account = "snowplow-account",
       warehouse = "snowplow_wa",
@@ -129,7 +129,7 @@ class LoaderSpec extends Specification { def is = s2"""
   def e6 = {
     val connection = new LoaderSpec.Mock()
     val config = Config(
-      auth = Config.CredentialsAuth("access", "secret"),
+      auth = Config.AuthMethod.CredentialsAuth("access", "secret"),
       "us-east-1",
       "manifest",
       "eu-central-1",
@@ -138,7 +138,7 @@ class LoaderSpec extends Specification { def is = s2"""
       Some(Config.S3Folder.coerce("s3://enriched-input/")),
       Config.S3Folder.coerce("s3://someBadRows/foo"),
       "user",
-      Config.PlainText("pass"),
+      Config.PasswordConfig.PlainText("pass"),
       "snowplow-acc",
       "wh",
       "db",
