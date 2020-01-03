@@ -12,250 +12,225 @@
  */
 package com.snowplowanalytics.snowflake.loader
 
-import org.specs2.Specification
+import org.specs2.matcher.Matcher
+import org.specs2.mutable.Specification
+import org.specs2.matcher.MatchersImplicits._
+
 import org.joda.time.DateTime
 
-import ast.{Insert, Select, SnowflakeDatatype, Statement}
+import cats.effect.{Clock, ExitCode, IO, Sync}
+import cats.effect.concurrent.Ref
 
+import com.snowplowanalytics.snowflake.core.{Config, ProcessManifest, RunId}
 import com.snowplowanalytics.snowflake.core.Config.S3Folder.{coerce => s3}
-import com.snowplowanalytics.snowflake.loader
 import com.snowplowanalytics.snowflake.loader.ast._
-import com.snowplowanalytics.snowflake.loader.connection.Connection
-import com.snowplowanalytics.snowflake.core.{ProcessManifest, RunId, Config}
+import com.snowplowanalytics.snowflake.loader.connection.{Database, DryRun}
 
-class LoaderSpec extends Specification { def is = s2"""
-  Parse context column name as ARRAY type $e1
-  Parse unstruct event column name as OBJECT type $e2
-  Fail to parse invalid column name $e3
-  Fail with exception to get list of columns $e4
-  Build valid INSERT statement $e5
-  Look at output $e6
-  """
+class LoaderSpec extends Specification {
 
-  def e1 = {
-    val columnName = "contexts_com_snowplowanalytics_snowplow_web_page_1"
-    val expected = "contexts_com_snowplowanalytics_snowplow_web_page_1" -> SnowflakeDatatype.JsonArray
-    val result = Loader.getShredType(columnName)
+  "getShreddedType" should {
+    "parse context column name as ARRAY type" in {
+      val columnName = "contexts_com_snowplowanalytics_snowplow_web_page_1"
+      val expected = "contexts_com_snowplowanalytics_snowplow_web_page_1" -> SnowflakeDatatype.JsonArray
+      val result = Loader.getShredType(columnName)
 
-    result must beRight(expected)
-  }
+      result must beRight(expected)
+    }
 
-  def e2 = {
-    val columnName = "unstruct_event_com_snowplowanalytics_snowplow_link_click_1"
-    val expected = "unstruct_event_com_snowplowanalytics_snowplow_link_click_1" -> SnowflakeDatatype.JsonObject
-    val result = Loader.getShredType(columnName)
+    "parse unstruct event column name as OBJECT type" in {
+      val columnName = "unstruct_event_com_snowplowanalytics_snowplow_link_click_1"
+      val expected = "unstruct_event_com_snowplowanalytics_snowplow_link_click_1" -> SnowflakeDatatype.JsonObject
+      val result = Loader.getShredType(columnName)
 
-    result must beRight(expected)
-  }
+      result must beRight(expected)
+    }
 
-  def e3 = {
-    // starts with context_ instead of contexts_
-    val columnName = "context_com_snowplowanalytics_snowplow_web_page_1"
-    val result = Loader.getShredType(columnName)
+    "fail to parse invalid column name" in {
+      // starts with context_ instead of contexts_
+      val columnName = "context_com_snowplowanalytics_snowplow_web_page_1"
+      val result = Loader.getShredType(columnName)
 
-    result must beLeft
-  }
-
-  def e4 = {
-    val newColumns = List("contexts_com_acme_ctx_1", "unknown_type")
-    Loader.getColumns(newColumns) must throwA[RuntimeException]
-  }
-
-  def e5 = {
-    val config = Config(
-      auth = Config.AuthMethod.CredentialsAuth(
-        accessKeyId = "accessKey",
-        secretAccessKey = "secretKey"
-      ),
-      awsRegion = "awsRegion",
-      manifest = "snoflake-manifest",
-      snowflakeRegion = "ue-east-1",
-      stage = "snowplow-stage",
-      stageUrl = Config.S3Folder.coerce("s3://somestage/foo"),
-      badOutputUrl = Some(Config.S3Folder.coerce("s3://someBadRows/foo")),
-      username = "snowfplow-loader",
-      password = Config.PasswordConfig.PlainText("super-secret"),
-      input = Config.S3Folder.coerce("s3://snowflake/input/"),
-      account = "snowplow-account",
-      warehouse = "snowplow_wa",
-      database = "database",
-      schema = "not_an_atomic",
-      maxError = None,
-      jdbcHost = None)
-
-    val runId = RunId.ProcessedRunId(
-      "archive/enriched/run=2017-10-09-17-40-30/",
-      addedAt = DateTime.now(),       // Doesn't matter
-      processedAt = DateTime.now(),   // Doesn't matter
-      List(
-        "contexts_com_snowplowanalytics_snowplow_web_page_1",
-        "contexts_com_snowplowanalytics_snowplow_web_page_2",
-        "unstruct_event_com_snowplowanalytics_snowplow_link_click_1"),
-      s3("s3://acme-snowplow/snowflake/run=2017-10-09-17-40-30/"),
-      "some-script",
-      false)
-
-    // Some to use .like matcher
-    val result = Some(Loader.getInsertStatement(config, runId))
-
-    result must beSome.like {
-      case Insert.InsertQuery(schema, table, columns, Select(sColumns, sSchema, sTable)) =>
-        // INSERT
-        val schemaResult = schema must beEqualTo("not_an_atomic")
-        val tableResult = table must beEqualTo("events")
-        val columnsAmount = columns must haveLength(131)
-        val exactColumns = columns must containAllOf(List(
-          "unstruct_event_com_snowplowanalytics_snowplow_link_click_1",
-          "contexts_com_snowplowanalytics_snowplow_web_page_2",
-          "app_id",
-          "page_url"))
-
-        // SELECT
-        val sSchemaResult = sSchema must beEqualTo("not_an_atomic")
-        val sTableResult = sTable must beEqualTo("snowplow_tmp_run_2017_10_09_17_40_30")
-        val sColumnsAmount = sColumns must haveLength(131)
-        val sExactColumns = sColumns must containAllOf(List(
-          Select.CastedColumn("enriched_data","unstruct_event_com_snowplowanalytics_snowplow_link_click_1", SnowflakeDatatype.JsonObject),
-          Select.CastedColumn("enriched_data", "contexts_com_snowplowanalytics_snowplow_web_page_1", SnowflakeDatatype.JsonArray),
-          Select.CastedColumn("enriched_data", "true_tstamp", SnowflakeDatatype.Timestamp),
-          Select.CastedColumn("enriched_data", "refr_domain_userid", SnowflakeDatatype.Varchar(Some(128)))))
-
-        schemaResult.and(tableResult).and(columnsAmount)
-          .and(sSchemaResult).and(sTableResult).and(sColumnsAmount)
-          .and(exactColumns).and(sExactColumns)
+      result must beLeft
     }
   }
 
-  def e6 = {
-    val connection = new LoaderSpec.Mock()
-    val config = Config(
-      auth = Config.AuthMethod.CredentialsAuth("access", "secret"),
-      "us-east-1",
-      "manifest",
-      "eu-central-1",
-      "archive-stage",
-      Config.S3Folder.coerce("s3://archive/"),
-      Some(Config.S3Folder.coerce("s3://enriched-input/")),
-      Config.S3Folder.coerce("s3://someBadRows/foo"),
-      "user",
-      Config.PasswordConfig.PlainText("pass"),
-      "snowplow-acc",
-      "wh",
-      "db",
-      "atomic",
-      None,
-      None)
-    Loader.exec(LoaderSpec.Mock, connection, new loader.LoaderSpec.ProcessingManifestTest, config)
-    val expected = List(
-      "SHOW schemas LIKE 'atomic'",
-      "SHOW stages LIKE 'archive-stage' IN atomic",
-      "SHOW tables LIKE 'events' IN atomic",
-      "SHOW file formats LIKE 'snowplow_enriched_json' IN atomic",
-      "SHOW warehouses LIKE 'wh'",
-      "USE WAREHOUSE wh",
-      "ALTER WAREHOUSE wh RESUME",
-      "New transaction snowplow_run_2017_12_10_14_30_35 started",
-      "ALTER TABLE atomic.events ADD COLUMN contexts_com_acme_something_1 ARRAY",
-      "CREATE TEMPORARY TABLE IF NOT EXISTS atomic.snowplow_tmp_run_2017_12_10_14_30_35 (enriched_data OBJECT NOT NULL)",
-      // INSERT INTO
-      "Transaction [snowplow_run_2017_12_10_14_30_35] successfully closed"
-    )
-    val result = connection.getResult
-    result must containAllOf(expected).inOrder
+  "getColumns" should {
+    "parse list of valid column names" in {
+      val newColumns = List("contexts_com_acme_ctx_1", "unstruct_event_something_1", "unstruct_event_another_2")
+      Loader.getColumns(newColumns) must beRight.like {
+        case columns => columns must LoaderSpec.endWith(List(
+          ("contexts_com_acme_ctx_1",SnowflakeDatatype.JsonArray),
+          ("unstruct_event_something_1",SnowflakeDatatype.JsonObject),
+          ("unstruct_event_another_2",SnowflakeDatatype.JsonObject)
+        ))
+      }
+
+    }
+
+    "fail with Left if list contains invalid column name" in {
+      val newColumns = List("contexts_com_acme_ctx_1", "unknown_type", "another")
+      Loader.getColumns(newColumns) must beLeft("Columns [unknown_type, another] are not valid shredded types")
+    }
+  }
+
+  "getInsertStatement" should {
+    "build a valid INSERT statement" in {
+      val config = Config(
+        auth = Config.AuthMethod.CredentialsAuth(
+          accessKeyId = "accessKey",
+          secretAccessKey = "secretKey"
+        ),
+        awsRegion = "awsRegion",
+        manifest = "snoflake-manifest",
+        snowflakeRegion = "ue-east-1",
+        stage = "snowplow-stage",
+        stageUrl = Config.S3Folder.coerce("s3://somestage/foo"),
+        badOutputUrl = Some(Config.S3Folder.coerce("s3://someBadRows/foo")),
+        username = "snowfplow-loader",
+        password = Config.PasswordConfig.PlainText("super-secret"),
+        input = Config.S3Folder.coerce("s3://snowflake/input/"),
+        account = "snowplow-account",
+        warehouse = "snowplow_wa",
+        database = "database",
+        schema = "not_an_atomic",
+        maxError = None,
+        jdbcHost = None)
+
+      val runId = RunId.ProcessedRunId(
+        "archive/enriched/run=2017-10-09-17-40-30/",
+        addedAt = DateTime.now(),       // Doesn't matter
+        processedAt = DateTime.now(),   // Doesn't matter
+        List(
+          "contexts_com_snowplowanalytics_snowplow_web_page_1",
+          "contexts_com_snowplowanalytics_snowplow_web_page_2",
+          "unstruct_event_com_snowplowanalytics_snowplow_link_click_1"),
+        s3("s3://acme-snowplow/snowflake/run=2017-10-09-17-40-30/"),
+        "some-script",
+        false)
+
+      val result = Loader.getInsertStatement(config, runId)
+
+      result must beRight.like {
+        case Insert.InsertQuery(schema, table, columns, Select(sColumns, sSchema, sTable)) =>
+          // INSERT
+          val schemaResult = schema must beEqualTo("not_an_atomic")
+          val tableResult = table must beEqualTo("events")
+          val columnsAmount = columns must haveLength(131)
+          val exactColumns = columns must containAllOf(List(
+            "unstruct_event_com_snowplowanalytics_snowplow_link_click_1",
+            "contexts_com_snowplowanalytics_snowplow_web_page_2",
+            "app_id",
+            "page_url"))
+
+          // SELECT
+          val sSchemaResult = sSchema must beEqualTo("not_an_atomic")
+          val sTableResult = sTable must beEqualTo("snowplow_tmp_run_2017_10_09_17_40_30")
+          val sColumnsAmount = sColumns must haveLength(131)
+          val sExactColumns = sColumns must containAllOf(List(
+            Select.CastedColumn("enriched_data","unstruct_event_com_snowplowanalytics_snowplow_link_click_1", SnowflakeDatatype.JsonObject),
+            Select.CastedColumn("enriched_data", "contexts_com_snowplowanalytics_snowplow_web_page_1", SnowflakeDatatype.JsonArray),
+            Select.CastedColumn("enriched_data", "true_tstamp", SnowflakeDatatype.Timestamp),
+            Select.CastedColumn("enriched_data", "refr_domain_userid", SnowflakeDatatype.Varchar(Some(128)))))
+
+          schemaResult.and(tableResult).and(columnsAmount)
+            .and(sSchemaResult).and(sTableResult).and(sColumnsAmount)
+            .and(exactColumns).and(sExactColumns)
+      }
+    }
+  }
+
+  "run" should {
+    "perform known list of SQL statements" in {
+      val config = Config(
+        auth = Config.AuthMethod.CredentialsAuth("access", "secret"),
+        "us-east-1",
+        "manifest",
+        "eu-central-1",
+        "archive-stage",
+        Config.S3Folder.coerce("s3://archive/"),
+        Some(Config.S3Folder.coerce("s3://enriched-input/")),
+        Config.S3Folder.coerce("s3://someBadRows/foo"),
+        "user",
+        Config.PasswordConfig.PlainText("pass"),
+        "snowplow-acc",
+        "wh",
+        "db",
+        "atomic",
+        None,
+        None)
+
+      import LoaderSpec._
+
+      val expectedSql = List(
+        "SHOW schemas LIKE 'atomic'",
+        "SHOW stages LIKE 'archive-stage' IN atomic",
+        "SHOW tables LIKE 'events' IN atomic",
+        "SHOW file formats LIKE 'snowplow_enriched_json' IN atomic",
+        "SHOW warehouses LIKE 'wh'",
+        "USE WAREHOUSE wh",
+        "ALTER WAREHOUSE wh RESUME",
+        "New transaction snowplow_run_2017_12_10_14_30_35 started",
+        "ALTER TABLE atomic.events ADD COLUMN contexts_com_acme_something_1 ARRAY",
+        "CREATE TEMPORARY TABLE IF NOT EXISTS atomic.snowplow_tmp_run_2017_12_10_14_30_35 (enriched_data OBJECT NOT NULL)",
+        // INSERT INTO
+        "Transaction [snowplow_run_2017_12_10_14_30_35] successfully closed"
+      )
+
+      val expectedLoaded = List("enriched/good/run=2017-12-10-14-30-35")
+
+      val test = for {
+        connection <- Database[IO].getConnection(config)
+        manifestState <- Ref.of[IO, ManifestState](LoaderSpec.ManifestState(Nil))
+        code <- Loader.run(connection, config)(Sync[IO], Database[IO], new ProcessingManifestTest(manifestState))
+        messages <- connection match {
+          case Database.Connection.Dry(state) => state.get.map(_.messages.reverse.filterNot(_.startsWith("INSERT INTO")))
+          case _ => IO.raiseError(new RuntimeException("Unexpected connection type"))
+        }
+        loaded <- manifestState.get.map(_.loaded)
+      } yield (code must beEqualTo(ExitCode.Success)) and (messages must containAllOf(expectedSql).inOrder) and (loaded must beEqualTo(expectedLoaded))
+
+      test.unsafeRunSync()
+    }
   }
 }
 
 object LoaderSpec {
 
-  class Mock {
-    private val messages = collection.mutable.ListBuffer.newBuilder[String]
+  implicit val catsIoClock: Clock[IO] = Clock.create[IO]
 
-    private var transaction: Option[String] = None
-    private var transactionNum = 0
-
-    def log(message: String): Unit = {
-      messages += message
-    }
-
-    def startTransaction(name: Option[String]): Unit =
-      transaction match {
-        case Some(current) =>
-          log(s"Invalid state: new transaction started until current [$current] not commited")
-        case None =>
-          log(s"New transaction ${name.getOrElse(" ")} started")
-          transactionNum += 1
-          val transactionName = name.getOrElse(transactionNum.toString)
-          transaction = Some(name.getOrElse(transactionName))
+  implicit val catsIoDryRunDatabase: Database[IO] = new DryRun.Stub {
+    override def executeAndReturnResult[S: Statement](connection: Database.Connection, ast: S) =
+      ast.getStatement match {
+        case Statement.SqlStatement(str) if str.toLowerCase.contains("show stages") =>
+          IO.pure(List(Map("url" -> "s3://archive/")))
+        case _ =>
+          super.executeAndReturnResult(connection, ast)
       }
-
-    def commitTransaction(): Unit =
-      transaction match {
-        case Some(current) =>
-          log(s"Transaction [$current] successfully closed")
-        case None =>
-          log("Invalid state: trying to close non-existent transaction")
-      }
-
-    def rollbackTransaction(): Unit =
-      transaction match {
-        case Some(current) =>
-          log(s"Transaction [$current] cancelled")
-        case None =>
-          log("Invalid state: trying to rollback non-existent transaction")
-      }
-
-    def getResult: List[String] =
-      messages.result().toList
   }
 
-  object Mock extends Connection[Mock] {
-    def getConnection(config: Config): Mock = {
-      val logConnection = new Mock
-      logConnection.log(s"Connected to ${config.database} database")
-      logConnection
-    }
+  case class ManifestState(loaded: List[String])
 
-    def execute[S: Statement](connection: Mock, ast: S): Unit =
-      connection.log(ast.getStatement.value)
+  class ProcessingManifestTest(state: Ref[IO, ManifestState]) extends ProcessManifest[IO] {
+    def markLoaded(tableName: String, runid: String): IO[Unit] =
+      state.update(s => s.copy(loaded = runid :: s.loaded))
 
-    def startTransaction(connection: Mock, name: Option[String]): Unit =
-      connection.startTransaction(name)
+    def scan(tableName: String): IO[Either[String, List[RunId]]] =
+      IO(Right(
+        List(
+          RunId.ProcessedRunId(
+            "enriched/good/run=2017-12-10-14-30-35",
+            DateTime.parse("2017-12-10T01:20+02:00"),
+            DateTime.parse("2017-12-10T01:20+02:00"),
+            List("contexts_com_acme_something_1"),
+            Config.S3Folder.coerce("s3://archive/run=2017-12-10-14-30-35/"), "0.2.0", false))
+      ))
 
-    def commitTransaction(connection: Mock): Unit =
-      connection.commitTransaction()
-
-    def executeAndOutput[S: Statement](connection: Mock, ast: S): Unit =
-      connection.log(ast.getStatement.value)
-
-    def rollbackTransaction(connection: Mock): Unit =
-      connection.rollbackTransaction()
-
-    def executeAndCountRows[S: Statement](connection: Mock, ast: S): Int = {
-      connection.log(ast.getStatement.value)
-      1 // Used for preliminary checks
-    }
-
-    def executeAndReturnResult[S: Statement](connection: Mock, ast: S): List[Map[String, Object]] = {
-      connection.log(ast.getStatement.value)
-      List(Map("url" -> "s3://archive/")) // Used for stageUrl check
-    }
+    def getUnprocessed(manifestTable: String, enrichedInput: Config.S3Folder): IO[Either[String, List[String]]] = ???
+    def add(tableName: String, runId: String): IO[Unit] = ???
+    def markProcessed(tableName: String, runId: String, shredTypes: List[String], outputPath: String): IO[Unit] = ???
   }
 
-  class ProcessingManifestTest extends ProcessManifest.Loader {
-    private val loaded = collection.mutable.ListBuffer.newBuilder[(String, String)]
-
-    def markLoaded(tableName: String, runid: String): Unit = {
-      loaded += ((tableName, runid))
-    }
-
-    override def scan(tableName: String): Either[String, List[RunId]] = Right(
-      List(
-        RunId.ProcessedRunId(
-          "enriched/good/run=2017-12-10-14-30-35",
-          DateTime.parse("2017-12-10T01:20+02:00"),
-          DateTime.parse("2017-12-10T01:20+02:00"),
-          List("contexts_com_acme_something_1"),
-          Config.S3Folder.coerce("s3://archive/run=2017-12-10-14-30-35/"), "0.2.0", false))
-    )
+  def endWith[A](expectation: List[A]): Matcher[List[A]] = { s: List[A] =>
+    (s.endsWith(expectation), s.toString +s" ends with $expectation", s.toString  + s" doesn't end with $expectation")
   }
 }

@@ -12,75 +12,75 @@
  */
 package com.snowplowanalytics.snowflake.transformer
 
-import org.json4s.jackson.JsonMethods._
-
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.serializer.KryoSerializer
 
-import scalaz.{Failure, Success}
+import cats.data.EitherT
+import cats.syntax.functor._
+import cats.syntax.either._
+import cats.effect.{ IO, IOApp, ExitCode }
+
+import io.circe.syntax._
+
+import com.snowplowanalytics.iglu.core.{ SchemaKey, SchemaVer }
 
 import com.snowplowanalytics.iglu.schemaddl.jsonschema.Schema
-import com.snowplowanalytics.iglu.schemaddl.jsonschema.json4s.implicits.json4sToSchema
-import com.snowplowanalytics.snowflake.core.{Config, ProcessManifest}
+import com.snowplowanalytics.iglu.schemaddl.jsonschema.circe.implicits._
+
+import com.snowplowanalytics.snowflake.core.{ProcessManifest, Cli, idClock}
 import com.snowplowanalytics.snowflake.transformer.TransformerJobConfig.S3Config
 
 
-object Main {
-  def main(args: Array[String]): Unit = {
-    Config.parseTransformerCli(args) match {
-      case Some(Right(Config.CliTransformerConfiguration(appConfig, resolver, eventsManifestConfig, inbatch))) =>
+object Main extends IOApp {
+
+  val AtomicSchema = SchemaKey("com.snowplowanalytics.snowplow", "atomic", "jsonschema", SchemaVer.Full(1, 0, 0))
+
+  def run(args: List[String]): IO[ExitCode] = {
+    Cli.Transformer.parse(args).value.flatMap {
+      case Right(Cli.Transformer(appConfig, igluClient, inbatch, eventsManifestConfig)) =>
 
         // Always use EMR Role role for manifest-access
-        val s3 = ProcessManifest.getS3(appConfig.awsRegion)
-        ProcessManifest.buildDynamoDb(appConfig.awsRegion)
-        val manifest = ProcessManifest.AwsProcessingManifest(s3)
+        for {
+          state <- ProcessManifest.initState[IO](appConfig.awsRegion)
+          manifest = ProcessManifest.awsSyncProcessManifest[IO](state)
 
-        // Eager SparkContext initializing to avoid YARN timeout
-        val config = new SparkConf()
-          .setAppName("snowflake-transformer")
-          .setIfMissing("spark.master", "local[*]")
-          .set("spark.serializer", classOf[KryoSerializer].getName)
-          .registerKryoClasses(TransformerJob.classesToRegister)
+          // Get run folders that are not in RunManifest in any form
+          runFolders <- manifest.getUnprocessed(appConfig.manifest, appConfig.input)
+          atomic <- EitherT(igluClient.resolver.lookupSchema(AtomicSchema))
+            .leftMap(_.value.asJson.noSpaces)
+            .flatMap(json => Schema.parse(json).toRight("Atomic event schema was invalid").toEitherT)
+            .value
+            .flatMap {
+              case Right(schema) => IO.pure(schema)
+              case Left(error) => IO.raiseError[Schema](new RuntimeException(error))
+            }
 
-        val spark = SparkSession.builder().config(config).getOrCreate()
-
-        // Get run folders that are not in RunManifest in any form
-        val runFolders = manifest.getUnprocessed(appConfig.manifest, appConfig.input)
-
-        // Get Atomic schema from Iglu
-        val atomic = resolver.lookupSchema("iglu:com.snowplowanalytics.snowplow/atomic/jsonschema/1-0-0") match {
-          case Success(jsonSchema) => Schema.parse(fromJsonNode(jsonSchema)) match {
-            case Some(schema) => schema
-            case None =>
-              println("Atomic event schema was invalid")
-              sys.exit(1)
+          // Eager SparkContext initializing to avoid YARN timeout
+          spark <- getSession
+          exitCode <- runFolders match {
+            case Right(folders) =>
+              val configs = folders.map(S3Config(appConfig.input, appConfig.stageUrl, appConfig.badOutputUrl, _))
+              TransformerJob.run(spark, manifest, appConfig.manifest, configs, eventsManifestConfig, inbatch, atomic).as(ExitCode.Success)
+            case Left(error) =>
+              die(s"Cannot get list of unprocessed folders\n$error")
           }
-          case Failure(error) =>
-            println("Cannot get atomic event schema")
-            println(error)
-            sys.exit(1)
-        }
-
-        runFolders match {
-          case Right(folders) =>
-            val configs = folders.map(S3Config(appConfig.input, appConfig.stageUrl, appConfig.badOutputUrl, _))
-            TransformerJob.run(spark, manifest, appConfig.manifest, configs, eventsManifestConfig, inbatch, atomic)
-          case Left(error) =>
-            println("Cannot get list of unprocessed folders")
-            println(error)
-            sys.exit(1)
-        }
-
-
-      case Some(Left(error)) =>
-        // Failed transformation
-        println(error)
-        sys.exit(1)
-
-      case None =>
-        // Invalid arguments
-        sys.exit(1)
+        } yield exitCode
+      case Left(error) => die(error)
     }
   }
+
+  def getSession: IO[SparkSession] =
+    IO {
+      val config = new SparkConf()
+        .setAppName("snowflake-transformer")
+        .setIfMissing("spark.master", "local[*]")
+        .set("spark.serializer", classOf[KryoSerializer].getName)
+        .registerKryoClasses(TransformerJob.classesToRegister)
+
+      SparkSession.builder().config(config).getOrCreate()
+    }
+
+  private def die(message: String): IO[ExitCode] =
+    IO(System.err.println(message)).as(ExitCode.Error)
 }

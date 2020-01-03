@@ -46,7 +46,7 @@ object InvalidJsonsSpec {
     """
 }
 
-class InvalidJsonsSpec extends Specification with TransformerJobSpec {
+class InvalidJsonsSpec extends TransformerJobSpec {
   import TransformerJobSpec._
   override def appName = "invalid-jsons"
   sequential

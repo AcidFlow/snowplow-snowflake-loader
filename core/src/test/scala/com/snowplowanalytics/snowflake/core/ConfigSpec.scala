@@ -12,32 +12,38 @@
  */
 package com.snowplowanalytics.snowflake.core
 
-import java.util.Base64
+import java.util.{ Base64, UUID }
 
-import org.specs2.Specification
-import com.snowplowanalytics.iglu.client.Resolver
-import com.snowplowanalytics.iglu.client.repositories.{HttpRepositoryRef, RepositoryRefConfig}
-import com.snowplowanalytics.snowplow.eventsmanifest.DynamoDbConfig
+import org.specs2.mutable.Specification
+
+import cats.effect.IO
+
+import io.circe.Json
+
+import com.snowplowanalytics.iglu.client.{ Client, Resolver }
+import com.snowplowanalytics.iglu.client.validator.CirceValidator
+import com.snowplowanalytics.iglu.client.resolver.registries.Registry
+
+import com.snowplowanalytics.snowplow.eventsmanifest.EventsManifestConfig
+import com.snowplowanalytics.snowflake.core.Config.SetupSteps
 import com.snowplowanalytics.snowflake.core.Config.S3Folder.{coerce => s3}
-import com.snowplowanalytics.snowflake.core.Config.{CliLoaderConfiguration, CliTransformerConfiguration, SetupSteps}
 
 
-class ConfigSpec extends Specification { def is = s2"""
-  Parse valid setup configuration $e1
-  Parse valid load configuration $e2
-  Parse valid base64-encoded configuration $e3
-  Parse valid S3 without trailing slash $e4
-  Parse valid S3 with trailing slash and s3n scheme $e5
-  Fail to parse invalid scheme $e6
-  Parse valid base64-encoded configuration with roleArn $e7
-  Parse valid load configuration with EC2-stored password and Role ARN $e8
-  Parse valid load without credentials $e9
-  Parse valid base64-encoded events manifest configuration $e10
-  Parse valid configuration with optional params $e11
-  Parse valid configuration with set setup steps $e12
-  Fail to parse configuration with bad setup steps $e13
-  Parse valid configuration without bad output url $e14
-  """
+class ConfigSpec extends Specification {
+  "Parse valid setup configuration" in e1
+  "Parse valid load configuration" in e2
+  "Parse valid base64-encoded configuration" in e3
+  "Parse valid S3 without trailing slash" in e4
+  "Parse valid S3 with trailing slash and s3n scheme" in e5
+  "Fail to parse invalid scheme" in e6
+  "Parse valid base64-encoded configuration with roleArn" in e7
+  "Parse valid load configuration with EC2-stored password and Role ARN" in e8
+  "Parse valid load without credentials" in e9
+  "Parse valid base64-encoded events manifest configuration" in e10
+  "Parse valid configuration with optional params" in e11
+  "Parse valid configuration with set setup steps" in e12
+  "Fail to parse configuration with bad setup steps" in e13
+  "Parse valid configuration without bad output url" in e14
 
   val configUrl = getClass.getResource("/valid-config.json")
   val resolverUrl = getClass.getResource("/resolver.json")
@@ -51,7 +57,7 @@ class ConfigSpec extends Specification { def is = s2"""
       |      "repositories":[
       |         {
       |            "name":"Iglu Central",
-      |            "priority":0,
+      |            "priority":10,
       |            "vendorPrefixes":[
       |               "com.snowplowanalytics"
       |            ],
@@ -84,10 +90,9 @@ class ConfigSpec extends Specification { def is = s2"""
       "--config", s"${configUrl.getPath}"
     ).toArray
 
-    val expected = CliLoaderConfiguration(
-      Config.SetupCommand,
+    val expected = Cli.Loader.Setup(
       Config(
-        auth = Config.CredentialsAuth(
+        auth = Config.AuthMethod.CredentialsAuth(
           accessKeyId = "ABCD",
           secretAccessKey = "abcd"
         ),
@@ -98,7 +103,7 @@ class ConfigSpec extends Specification { def is = s2"""
         badOutputUrl = Some(s3("s3://badRows/output/")),
         snowflakeRegion = "us-west-1",
         username = "anton",
-        password = Config.PlainText("Supersecret2"),
+        password = Config.PasswordConfig.PlainText("Supersecret2"),
         input = s3("s3://snowflake/input/"),
         account = "snowplow",
         warehouse = "snowplow_wh",
@@ -106,11 +111,10 @@ class ConfigSpec extends Specification { def is = s2"""
         schema = "atomic",
         maxError = None,
         jdbcHost = None),
-      "",
       Set(),
       false)
 
-    Config.parseLoaderCli(args) must beSome(Right(expected))
+    Cli.Loader.parse(args).value.unsafeRunSync() must beRight(expected)
   }
 
   def e2 = {
@@ -121,10 +125,9 @@ class ConfigSpec extends Specification { def is = s2"""
       "--resolver", s"${resolverUrl.getPath}",
       "--config", s"${configUrl.getPath}").toArray
 
-    val expected = CliLoaderConfiguration(
-      Config.LoadCommand,
+    val expected = Cli.Loader.Load(
       Config(
-        auth = Config.CredentialsAuth(
+        auth = Config.AuthMethod.CredentialsAuth(
           accessKeyId = "ABCD",
           secretAccessKey = "abcd"
         ),
@@ -137,17 +140,15 @@ class ConfigSpec extends Specification { def is = s2"""
         input = s3("s3://snowflake/input/"),
         schema = "atomic",
         username = "anton",
-        password = Config.PlainText("Supersecret2"),
+        password = Config.PasswordConfig.PlainText("Supersecret2"),
         account = "snowplow",
         warehouse = "snowplow_wh",
         database = "test_db",
         maxError = None,
         jdbcHost = None),
-      "",
-      Set(),
       true)
 
-    Config.parseLoaderCli(args) must beSome(Right(expected))
+    Cli.Loader.parse(args).value.unsafeRunSync() must beRight(expected)
   }
 
   def e3 = {
@@ -188,10 +189,9 @@ class ConfigSpec extends Specification { def is = s2"""
       "--config", encodeToBase64(config)
     ).toArray
 
-    val expected = CliLoaderConfiguration(
-      Config.LoadCommand,
+    val expected = Cli.Loader.Load(
       Config(
-        auth = Config.CredentialsAuth(
+        auth = Config.AuthMethod.CredentialsAuth(
           accessKeyId = "ABCDA",
           secretAccessKey = "abcd"
         ),
@@ -203,18 +203,16 @@ class ConfigSpec extends Specification { def is = s2"""
         snowflakeRegion = "us-west-1",
         schema = "atomic",
         username = "anton",
-        password = Config.PlainText("Supersecret2"),
+        password = Config.PasswordConfig.PlainText("Supersecret2"),
         input = s3("s3://snowflake/input/"),
         account = "snowplow",
         warehouse = "snowplow_wh",
         database = "test_db",
         maxError = None,
         jdbcHost = None),
-      "",
-      Set(),
       true)
 
-    Config.parseLoaderCli(args) must beSome(Right(expected))
+    Cli.Loader.parse(args).value.unsafeRunSync() must beRight(expected)
 
   }
 
@@ -270,10 +268,9 @@ class ConfigSpec extends Specification { def is = s2"""
       "--base64"
     ).toArray
 
-    val expected = CliLoaderConfiguration(
-      Config.SetupCommand,
+    val expected = Cli.Loader.Setup(
       Config(
-        auth = Config.RoleAuth(
+        auth = Config.AuthMethod.RoleAuth(
           roleArn = "arn:aws:iam::719197435995:role/SnowflakeRole",
           sessionDuration = 900
         ),
@@ -285,18 +282,17 @@ class ConfigSpec extends Specification { def is = s2"""
         snowflakeRegion = "us-west-1",
         schema = "atomic",
         username = "anton",
-        password = Config.PlainText("Supersecret2"),
+        password = Config.PasswordConfig.PlainText("Supersecret2"),
         input = s3("s3://snowflake/input/"),
         account = "snowplow",
         warehouse = "snowplow_wh",
         database = "test_db",
         maxError = None,
         jdbcHost = None),
-      "",
       Set(),
       false)
 
-    Config.parseLoaderCli(args) mustEqual Some((Right(expected)))
+    Cli.Loader.parse(args).value.unsafeRunSync() must beRight(expected)
   }
 
   def e8 = {
@@ -307,10 +303,9 @@ class ConfigSpec extends Specification { def is = s2"""
       "--resolver", s"${resolverUrl.getPath}",
       "--config", s"${secureConfigUrl.getPath}").toArray
 
-    val expected = CliLoaderConfiguration(
-      Config.LoadCommand,
+    val expected = Cli.Loader.Load(
       Config(
-        auth = Config.RoleAuth(
+        auth = Config.AuthMethod.RoleAuth(
           roleArn = "arn:aws:iam::111222333444:role/SnowflakeLoadRole",
           sessionDuration = 900
         ),
@@ -323,7 +318,7 @@ class ConfigSpec extends Specification { def is = s2"""
         input = s3("s3://snowflake/input/"),
         schema = "atomic",
         username = "anton",
-        password = Config.EncryptedKey(
+        password = Config.PasswordConfig.EncryptedKey(
           Config.EncryptedConfig(
             Config.ParameterStoreConfig("snowplow.snowflakeloader.snowflake.password"))),
         account = "snowplow",
@@ -331,11 +326,9 @@ class ConfigSpec extends Specification { def is = s2"""
         database = "test_db",
         maxError = None,
         jdbcHost = None),
-      "",
-      Set(),
       true)
 
-    Config.parseLoaderCli(args) must beSome(Right(expected))
+    Cli.Loader.parse(args).value.unsafeRunSync() must beRight(expected)
   }
 
   def e9 = {
@@ -346,10 +339,9 @@ class ConfigSpec extends Specification { def is = s2"""
       "--resolver", s"${resolverUrl.getPath}",
       "--config", s"${noauthConfigUrl.getPath}").toArray
 
-    val expected = CliLoaderConfiguration(
-      Config.LoadCommand,
+    val expected = Cli.Loader.Load(
       Config(
-        auth = Config.StageAuth,
+        auth = Config.AuthMethod.StageAuth,
         awsRegion = "us-east-1",
         manifest = "snowflake-manifest",
         stage = "some_stage",
@@ -359,7 +351,7 @@ class ConfigSpec extends Specification { def is = s2"""
         input = s3("s3://snowflake/input/"),
         schema = "atomic",
         username = "anton",
-        password = Config.EncryptedKey(
+        password = Config.PasswordConfig.EncryptedKey(
           Config.EncryptedConfig(
             Config.ParameterStoreConfig("snowplow.snowflakeloader.snowflake.password"))),
         account = "snowplow",
@@ -367,11 +359,9 @@ class ConfigSpec extends Specification { def is = s2"""
         database = "test_db",
         maxError = None,
         jdbcHost = None),
-      "",
-      Set(),
       true)
 
-    Config.parseLoaderCli(args) must beSome(Right(expected))
+    Cli.Loader.parse(args).value.unsafeRunSync() must beRight(expected)
   }
 
   def e10 = {
@@ -427,9 +417,9 @@ class ConfigSpec extends Specification { def is = s2"""
       "--config", encodeToBase64(config),
       "--events-manifest", encodeToBase64(eventManifestConfig)).toArray
 
-    val expected = CliTransformerConfiguration(
+    val expected = Cli.Transformer(
       Config(
-        auth = Config.CredentialsAuth(
+        auth = Config.AuthMethod.CredentialsAuth(
           accessKeyId = "ABCD",
           secretAccessKey = "abcd"
         ),
@@ -441,40 +431,33 @@ class ConfigSpec extends Specification { def is = s2"""
         snowflakeRegion = "us-west-1",
         schema = "atomic",
         username = "anton",
-        password = Config.PlainText("Supersecret2"),
+        password = Config.PasswordConfig.PlainText("Supersecret2"),
         input = s3("s3://snowflake/input/"),
         account = "snowplow",
         warehouse = "snowplow_wh",
         database = "test_db",
         maxError = None,
         jdbcHost = None),
-      Resolver(
-        cacheSize = 500,
-        repos = List(
-          HttpRepositoryRef(
-            config = RepositoryRefConfig(
-              name = "Iglu Central",
-              instancePriority = 0,
-              vendorPrefixes = List("com.snowplowanalytics")
-            ),
-            uri = "http://iglucentral.com",
-            apikey = None
-          )
-        )
-      ),
-      Some(DynamoDbConfig(
+      Client[IO, Json](Resolver(List(Registry.IgluCentral), None), CirceValidator),
+      true,
+      Some(EventsManifestConfig.DynamoDb(
+        id = Some(UUID.fromString("56799a26-980c-4148-8bd9-c021b988c669")),
         name = "local",
-        auth = Some(DynamoDbConfig.CredentialsAuth(
+        auth = Some(EventsManifestConfig.DynamoDb.Credentials(
           accessKeyId = "fakeAccessKeyId",
           secretAccessKey = "fakeSecretAccessKey")
         ),
         awsRegion = "us-west-1",
         dynamodbTable = "snowplow-integration-test-crossbatch-dedupe"
-      )),
-      true
+      ))
     )
 
-    Config.parseTransformerCli(args) must beSome(Right(expected))
+    Cli.Transformer.parse(args).value.unsafeRunSync() must beRight.like {
+      case transformer @ Cli.Transformer(_, client, _, _) =>
+        val updatedClient: Resolver[IO] = client.resolver.copy(cache = None)
+        val updatedConfig = transformer.copy(igluClient = transformer.igluClient.copy(resolver = updatedClient))
+        updatedConfig must beEqualTo(expected)
+    }
   }
 
   def e11 = {
@@ -517,10 +500,9 @@ class ConfigSpec extends Specification { def is = s2"""
       "--base64"
     ).toArray
 
-    val expected = CliLoaderConfiguration(
-      Config.LoadCommand,
+    val expected = Cli.Loader.Load(
       Config(
-        auth = Config.CredentialsAuth(
+        auth = Config.AuthMethod.CredentialsAuth(
           accessKeyId = "ABCD",
           secretAccessKey = "abcd"
         ),
@@ -532,18 +514,16 @@ class ConfigSpec extends Specification { def is = s2"""
         snowflakeRegion = "us-west-1",
         schema = "atomic",
         username = "anton",
-        password = Config.PlainText("Supersecret2"),
+        password = Config.PasswordConfig.PlainText("Supersecret2"),
         input = s3("s3://snowflake/input/"),
         account = "snowplow",
         warehouse = "snowplow_wh",
         database = "test_db",
         maxError = Some(10000),
         jdbcHost = Some("snowplow.us-west-1.azure.snowflakecomputing.com")),
-      "",
-      Set(),
       true)
 
-    Config.parseLoaderCli(args) must beSome(Right(expected))
+    Cli.Loader.parse(args).value.unsafeRunSync() must beRight(expected)
   }
 
   def e12 = {
@@ -581,13 +561,14 @@ class ConfigSpec extends Specification { def is = s2"""
       "--resolver", resolverBase64,
       "--config", encodeToBase64(config),
       "--base64",
-      "--skip", "schema,stage,table"
+      "--skip", "schema",
+      "--skip", "stage",
+      "--skip", "table"
     ).toArray
 
-    val expected = CliLoaderConfiguration(
-      Config.SetupCommand,
+    val expected = Cli.Loader.Setup(
       Config(
-        auth = Config.RoleAuth(
+        auth = Config.AuthMethod.RoleAuth(
           roleArn = "arn:aws:iam::719197435995:role/SnowflakeRole",
           sessionDuration = 900
         ),
@@ -599,18 +580,17 @@ class ConfigSpec extends Specification { def is = s2"""
         snowflakeRegion = "us-west-1",
         schema = "atomic",
         username = "anton",
-        password = Config.PlainText("Supersecret2"),
+        password = Config.PasswordConfig.PlainText("Supersecret2"),
         input = s3("s3://snowflake/input/"),
         account = "snowplow",
         warehouse = "snowplow_wh",
         database = "test_db",
         maxError = None,
         jdbcHost = None),
-      "",
       Set(SetupSteps.Schema, SetupSteps.Stage, SetupSteps.Table),
       false)
 
-    Config.parseLoaderCli(args) must beSome(Right(expected))
+    Cli.Loader.parse(args).value.unsafeRunSync() must beRight(expected)
   }
 
   def e13 = {
@@ -648,10 +628,17 @@ class ConfigSpec extends Specification { def is = s2"""
       "--resolver", resolverBase64,
       "--config", encodeToBase64(config),
       "--base64",
-      "--skip", "schema,stage,foo,bar"
+      "--skip", "schema",
+      "--skip", "stage",
+      "--skip", "foo",
+      "--skip", "bar"
     ).toArray
 
-    Config.parseLoaderCli(args) must beNone
+    val result = Cli.Loader.parse(args).value.unsafeRunSync()
+
+    result must beLeft.like {
+      case help => help must contain("Step bar is unknown. Available options: schema, table, warehouse, fileformat, stage")
+    }
   }
 
   def e14 = {
@@ -690,10 +677,9 @@ class ConfigSpec extends Specification { def is = s2"""
       "--base64"
     ).toArray
 
-    val expected = CliLoaderConfiguration(
-      Config.SetupCommand,
+    val expected = Cli.Loader.Setup(
       Config(
-        auth = Config.RoleAuth(
+        auth = Config.AuthMethod.RoleAuth(
           roleArn = "arn:aws:iam::719197435995:role/SnowflakeRole",
           sessionDuration = 900
         ),
@@ -705,17 +691,16 @@ class ConfigSpec extends Specification { def is = s2"""
         snowflakeRegion = "us-west-1",
         schema = "atomic",
         username = "anton",
-        password = Config.PlainText("Supersecret2"),
+        password = Config.PasswordConfig.PlainText("Supersecret2"),
         input = s3("s3://snowflake/input/"),
         account = "snowplow",
         warehouse = "snowplow_wh",
         database = "test_db",
         maxError = None,
         jdbcHost = None),
-      "",
       Set(),
       false)
 
-    Config.parseLoaderCli(args) must beSome(Right(expected))
+    Cli.Loader.parse(args).value.unsafeRunSync() must beRight(expected)
   }
 }

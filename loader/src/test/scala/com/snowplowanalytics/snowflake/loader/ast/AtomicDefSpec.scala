@@ -12,27 +12,27 @@
  */
 package com.snowplowanalytics.snowflake.loader.ast
 
-import org.specs2.Specification
+import org.specs2.mutable.Specification
 
 import scala.io.Source
 
-class AtomicDefSpec  extends Specification { def is = s2"""
-  CREATE atomic.events $e1
-  """
+class AtomicDefSpec extends Specification {
+  "getTable" should {
+    "CREATE atomic.events" in {
+//      import AtomicDefSpec._
 
-  import AtomicDefSpec._
+      val referenceStream = getClass.getResourceAsStream("/sql/atomic-def.sql")
+      val expectedLines = Source.fromInputStream(referenceStream).getLines().toList
+      val expected = List(AtomicDefSpec.normalizeSql(expectedLines).mkString(""))
 
-  def e1 = {
-    val referenceStream = getClass.getResourceAsStream("/sql/atomic-def.sql")
-    val expectedLines = Source.fromInputStream(referenceStream).getLines().toList
-    val expected = List(normalizeSql(expectedLines).mkString(""))
+      val resultLines = AtomicDef.getTable().getStatement.value.split("\n").toList
+      val result = AtomicDefSpec.normalizeSql(resultLines)
 
-    val resultLines = AtomicDef.getTable().getStatement.value.split("\n").toList
-    val result = normalizeSql(resultLines)
-
-    result must beEqualTo(expected)
+      result must beEqualTo(expected)
+    }
   }
 }
+
 
 object AtomicDefSpec {
   /** Remove comments and formatting */

@@ -15,62 +15,109 @@ package com.snowplowanalytics.snowflake.core
 import java.nio.file.{Files, InvalidPathException, Path, Paths}
 import java.util.Base64
 
-import scala.concurrent.duration.TimeUnit
-
-import cats.Id
 import cats.data.{EitherT, ValidatedNel}
+import cats.effect.IO
 import cats.implicits._
-import cats.effect.Clock
 
 import io.circe.Json
 import io.circe.syntax._
 import io.circe.parser.{parse => jsonParse}
 
+import com.monovore.decline.{ Opts, Command, Argument }
+
 import com.snowplowanalytics.iglu.client.Client
 import com.snowplowanalytics.iglu.core.SelfDescribingData
 import com.snowplowanalytics.iglu.core.circe.implicits._
 
-sealed trait Cli
+import com.snowplowanalytics.snowplow.eventsmanifest.EventsManifestConfig
 
 object Cli {
   import Config._
 
+  /** Config files for Loader can be passed either as FS path
+    * or as base64-encoded JSON (if `--base64` is provided) */
   type PathOrJson = Either[Path, Json]
 
   object PathOrJson {
-    def parse(t: (String, Boolean)): ValidatedNel[String, PathOrJson] = t match {
-      case (string, encoded) =>
-        val result = if (encoded)
-          Either
-            .catchOnly[IllegalArgumentException](new String(Base64.getDecoder.decode(string)))
-            .leftMap(_.getMessage)
-            .flatMap(s => jsonParse(s).leftMap(_.show))
-            .map(_.asRight)
-        else Either.catchOnly[InvalidPathException](Paths.get(string).asLeft).leftMap(_.getMessage)
-        result
-          .leftMap(error => s"Cannot parse as ${if (encoded) "base64-encoded JSON" else "FS path"}: $error")
-          .toValidatedNel
+    def parse(string: String, encoded: Boolean): ValidatedNel[String, PathOrJson] = {
+      val result = if (encoded)
+        Either
+          .catchOnly[IllegalArgumentException](new String(Base64.getDecoder.decode(string)))
+          .leftMap(_.getMessage)
+          .flatMap(s => jsonParse(s).leftMap(_.show))
+          .map(_.asRight)
+      else Either.catchOnly[InvalidPathException](Paths.get(string).asLeft).leftMap(_.getMessage)
+      result
+        .leftMap(error => s"Cannot parse as ${if (encoded) "base64-encoded JSON" else "FS path"}: $error")
+        .toValidatedNel
     }
 
-    def load(value: PathOrJson): EitherT[Id, String, Json] =
+    def load(value: PathOrJson): EitherT[IO, String, Json] =
       value match {
         case Right(json) =>
-          EitherT.rightT[Id, String](json)
+          EitherT.rightT[IO, String](json)
         case Left(path) =>
           Either
             .catchNonFatal(new String(Files.readAllBytes(path)))
             .leftMap(e => s"Cannot read the path: ${e.getMessage}")
             .flatMap(s => jsonParse(s).leftMap(_.show))
-            .toEitherT[Id]
+            .toEitherT[IO]
       }
   }
 
-  case class Transformer(loaderConfig: PathOrJson,
-                         resolver: PathOrJson,
-                         eventsManifestConfig: Option[PathOrJson],
-                         inbatch: Boolean)
+  /** Base64-encoded JSON */
+  case class Base64Encoded(json: Json) extends AnyVal
 
-  sealed trait Loader extends Cli
+  object Base64Encoded {
+    def parse(string: String): Either[String, Base64Encoded] =
+      Either
+        .catchOnly[IllegalArgumentException](Base64.getDecoder.decode(string))
+        .map(bytes => new String(bytes))
+        .flatMap(str => jsonParse(str))
+        .leftMap(e => s"Cannot parse ${string} as Base64-encoded JSON: ${e.getMessage}")
+        .map(json => Base64Encoded(json))
+  }
+
+  implicit def base64EncodedDeclineArg: Argument[Base64Encoded] =
+    new Argument[Base64Encoded] {
+      def read(string:  String): ValidatedNel[String, Base64Encoded] =
+        Base64Encoded.parse(string).toValidatedNel
+
+      def defaultMetavar: String = "base64"
+    }
+
+  case class Transformer(loaderConfig: Config,
+                         igluClient: Client[IO, Json],
+                         inbatch: Boolean,
+                         eventsManifestConfig: Option[EventsManifestConfig])
+
+  object Transformer {
+    case class Raw(loaderConfig: Base64Encoded,
+                   resolver: Base64Encoded,
+                   inbatch: Boolean,
+                   eventsManifestConfig: Option[Base64Encoded])
+
+    def parse(args: Seq[String]): EitherT[IO, String, Transformer] =
+      transformer
+        .parse(args)
+        .leftMap(_.toString).toEitherT[IO]
+        .flatMap(init)
+
+    def init(raw: Raw): EitherT[IO, String, Transformer] =
+      for {
+        igluClient <- Client.parseDefault[IO](raw.resolver.json).leftMap(_.show)
+        configData <- SelfDescribingData.parse(raw.loaderConfig.json).leftMap(e => s"Configuration JSON is not self-describing, ${e.code}").toEitherT[IO]
+        _ <- igluClient.check(configData).leftMap(e => s"Iglu validation failed with following error\n: ${e.asJson.spaces2}")
+        cfg <- configData.data.as[Config].toEitherT[IO].leftMap(e => s"Error while decoding configuration JSON, ${e.show}")
+        manifest <- raw.eventsManifestConfig match {
+          case Some(json) => EventsManifestConfig.parseJson[IO](igluClient, json.json).map(_.some)
+          case None => EitherT.rightT[IO, String](none[EventsManifestConfig])
+        }
+      } yield Transformer(cfg, igluClient, raw.inbatch, manifest)
+
+  }
+
+  sealed trait Loader extends Product with Serializable
   object Loader {
 
     sealed trait RawCli extends Product with Serializable {
@@ -86,34 +133,28 @@ object Cli {
     final case class Setup(loaderConfig: Config, skip: Set[SetupSteps], dryRun: Boolean) extends Loader
     final case class Migrate(loaderConfig: Config, loaderVersion: String, dryRun: Boolean) extends Loader
 
-    implicit val idClock: cats.effect.Clock[Id] = new Clock[Id] {
-      def realTime(unit: TimeUnit): Id[Long] =
-        unit.convert(System.currentTimeMillis(), java.util.concurrent.TimeUnit.MILLISECONDS)
-      def monotonic(unit: TimeUnit): Id[Long] =
-        unit.convert(System.nanoTime(), java.util.concurrent.TimeUnit.NANOSECONDS)
-    }
+    def parse(args: Seq[String]) =
+      loader
+        .parse(args)
+        .leftMap(_.toString).toEitherT[IO]
+        .flatMap(init)
 
-    def init(rawCli: RawCli): Either[String, Loader] = {
-      val result = for {
+    def init(rawCli: RawCli): EitherT[IO, String, Loader] =
+      for {
         resolverJson <- PathOrJson.load(rawCli.resolver)
-        igluClient <- Client.parseDefault[Id](resolverJson).leftMap(_.show)
+        igluClient <- Client.parseDefault[IO](resolverJson).leftMap(_.show)
         configJson <- PathOrJson.load(rawCli.loaderConfig)
-        configData <- SelfDescribingData.parse(configJson).leftMap(e => s"Configuration JSON is not self-describing, ${e.code}").toEitherT[Id]
+        configData <- SelfDescribingData.parse(configJson).leftMap(e => s"Configuration JSON is not self-describing, ${e.code}").toEitherT[IO]
         _ <- igluClient.check(configData).leftMap(e => s"Iglu validation failed with following error\n: ${e.asJson.spaces2}")
-        cfg <- configData.data.as[Config].toEitherT[Id].leftMap(_.show)
+        cfg <- configData.data.as[Config].toEitherT[IO].leftMap(e => s"Error while decoding configuration JSON, ${e.show}")
       } yield rawCli match {
         case LoadRaw(_, _, dryRun) => Load(cfg, dryRun)
         case SetupRaw(_, _, skip, dryRun) => Setup(cfg, skip, dryRun)
         case MigrateRaw(_, _, version, dryRun) => Migrate(cfg, version, dryRun)
       }
-
-      result.value
-    }
   }
 
-  import com.monovore.decline.{ Opts, Command, Argument }
-
-  implicit val stepOpt = new Argument[SetupSteps] {
+  implicit def stepDeclineArg = new Argument[SetupSteps] {
     def read(string: String): ValidatedNel[String, SetupSteps] =
       SetupSteps
         .withNameInsensitiveOption(string)
@@ -127,27 +168,37 @@ object Cli {
   val version = Opts.option[String]("loader-version", s"Snowplow Snowflake Loader version to make the table compatible with")
   val steps = Opts.options[SetupSteps]("skip", s"Skip the setup step. Available steps: ${Config.SetupSteps.values}").orNone.map(_.toList.unite.toSet)
 
-  val resolverOpt = Opts.option[String]("resolver", "Iglu Resolver JSON config, FS path or base64-encoded")
-  val resolver = (resolverOpt, base64).tupled.mapValidated(PathOrJson.parse)
-  val configOpt = Opts.option[String]("config", "Snowflake Loader JSON config, FS path or base64-encoded")
-  val config = (configOpt, base64).tupled.mapValidated(PathOrJson.parse)
+  val resolver = Opts.option[String]("resolver", "Iglu Resolver JSON config, FS path or base64-encoded")
+  val resolverEncoded = Opts.option[Base64Encoded]("resolver", "Iglu Resolver JSON config, base64-encoded")
 
-  val setupOpt = (config, steps, dryRun, resolver).mapN { (config, steps, dry, r) => Loader.SetupRaw(config, r, steps, dry) }
+  val config = Opts.option[String]("config", "Snowflake Loader JSON config, FS path or base64-encoded")
+  val configEncoded = Opts.option[Base64Encoded]("config", "Snowflake Loader JSON config, base64-encoded")
+
+  val setupOpt = (config, base64, steps, dryRun, resolver).tupled.mapValidated {
+    case (cfg, encoded, steps, dry, res) =>
+      (PathOrJson.parse(cfg, encoded), PathOrJson.parse(res, encoded)).mapN { (c, r) => Loader.SetupRaw(c, r, steps, dry) }
+  }
   val setup = Opts.subcommand(Command("setup", "Perform setup actions", true)(setupOpt))
 
-  val migrateOpt = (config, dryRun, resolver, version).mapN { (config, dry, r, v) => Loader.MigrateRaw(config, r, v, dry) }
+  val migrateOpt = (config, base64, version, dryRun, resolver).tupled.mapValidated {
+    case (cfg, encoded, version, dry, res) =>
+      (PathOrJson.parse(cfg, encoded), PathOrJson.parse(res, encoded)).mapN { (c, r) => Loader.MigrateRaw(c, r, version, dry) }
+  }
   val migrate = Opts.subcommand(Command("migrate", "Load data into a warehouse", true)(migrateOpt))
 
-  val loadOpt = (config, dryRun, resolver).mapN { (config, dry, r) => Loader.LoadRaw(config, r, dry) }
+  val loadOpt = (config, base64, dryRun, resolver).tupled.mapValidated {
+    case (cfg, encoded, dry, res) =>
+      (PathOrJson.parse(cfg, encoded), PathOrJson.parse(res, encoded)).mapN { (c, r) => Loader.LoadRaw(c, r, dry) }
+  }
   val load = Opts.subcommand(Command("load", "Load data into a warehouse", true)(loadOpt))
 
-  val loaderCommand = Command("snowplow-snowflake-loader", "Snowplow Database orchestrator")(load.orElse(setup).orElse(migrate))
+  val inBatchDedupe = Opts.flag("inbatch-deduplication", "Enable in-batch natural deduplication").orFalse
+  val evantsManifest = Opts.option[Base64Encoded]("events-manifest", "Snowplow Events Manifest JSON config, to enable cross-batch deduplication, base64-encoded").orNone
 
-  def parse(args: Seq[String]) = {
-    loaderCommand.parse(args)
-      .leftMap(_.toString)
-      .flatMap { raw => Loader.init(raw) }
+  val loader = Command("snowplow-snowflake-loader", "Snowplow Database orchestrator")(load.orElse(setup).orElse(migrate))
+
+  val transformer = Command("snowplow-snowflake-transformer", "Spark job to transform enriched data to Snowflake-compatible format") {
+    (configEncoded, resolverEncoded, inBatchDedupe, evantsManifest).mapN(Transformer.Raw)
   }
-
 }
 

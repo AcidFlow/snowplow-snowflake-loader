@@ -12,20 +12,23 @@
  */
 package com.snowplowanalytics.snowflake.loader.ast
 
-import org.specs2.Specification
+import org.specs2.mutable.Specification
+
 import com.snowplowanalytics.snowflake.core.Config
 import com.snowplowanalytics.snowflake.loader.ast.Select.Substring
 
-class StatementSpec extends Specification { def is = s2"""
-  Transform CREATE TABLE AST into String $e1
-  Transform COPY INTO AST into String $e2
-  Transform INSERT INTO AST into String $e3
-  Transform SHOW into String $e4
-  Transform COPY INTO AST (without credentials) into String $e5
-  Transform CREATE STAGE AST into String $e6
-  Transform COPY INTO AST (with stripping nulls) into String $e7
-  Transform CREATE WAREHOUSE AST into String $e8
-  """
+class StatementSpec extends Specification {
+
+  "getStatement" should {
+    "Transform CREATE TABLE AST into String" in e1
+    "Transform COPY INTO AST into String" in e2
+    "Transform INSERT INTO AST into String" in e3
+    "Transform SHOW into String" in e4
+    "Transform COPY INTO AST (without credentials) into String" in e5
+    "Transform CREATE STAGE AST into String"  in e6
+    "Transform COPY INTO AST (with stripping nulls) into String" in e7
+    "Transform CREATE WAREHOUSE AST into String" in e8
+  }
 
   def e1 = {
     val columns = List(

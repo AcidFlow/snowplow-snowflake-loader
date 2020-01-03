@@ -21,24 +21,21 @@ object Dependencies {
     val aws              = "1.11.209"
     // Scala
     val spark            = "2.2.0"
-    val scopt            = "3.7.0"
+    val fs2              = "1.0.5"
     val decline          = "1.0.0"
-    val analyticsSdk     = "0.4.1"
-    val json4sJackson    = "3.2.11"
-    val cats             = "0.9.0"
+    val analyticsSdk     = "0.4.2"
     val enumeratum       = "1.5.13"
     val igluClient       = "0.6.2"
-    val eventsManifest   = "0.1.0"
+    val eventsManifest   = "0.2.0"
     val schemaDdl        = "0.9.0"
     val circe            = "0.11.1"
+    val jackson          = "2.6.5"
     // Scala (test only)
-    val specs2           = "2.3.13"
-    val scalazSpecs2     = "0.2"
-    val scalaCheck       = "1.12.2"
+    val specs2           = "4.6.0"
   }
 
   // Java
-  val hadoop           = "org.apache.hadoop"     % "hadoop-aws"                    % V.hadoop         % "provided"
+  val hadoop           = "org.apache.hadoop"     % "hadoop-aws"                    % V.hadoop         % Provided
   val snowflakeJdbc    = "net.snowflake"         % "snowflake-jdbc"                % V.snowflakeJdbc
   val s3               = "com.amazonaws"         % "aws-java-sdk-s3"               % V.aws
   val dynamodb         = "com.amazonaws"         % "aws-java-sdk-dynamodb"         % V.aws
@@ -46,23 +43,20 @@ object Dependencies {
   val sts              = "com.amazonaws"         % "aws-java-sdk-sts"              % V.aws
 
   // Scala
-  val spark            = "org.apache.spark"      %% "spark-core"                   % V.spark          % "provided"
-  val sparkSql         = "org.apache.spark"      %% "spark-sql"                    % V.spark          % "provided"
+  val spark            = "org.apache.spark"      %% "spark-core"                   % V.spark          % Provided
+  val sparkSql         = "org.apache.spark"      %% "spark-sql"                    % V.spark          % Provided
+  val fs2              = "co.fs2"                %% "fs2-core"                     % V.fs2
   val decline          = "com.monovore"          %% "decline"                      % V.decline
-  val scopt            = "com.github.scopt"      %% "scopt"                        % V.scopt
   val analyticsSdk     = "com.snowplowanalytics" %% "snowplow-scala-analytics-sdk" % V.analyticsSdk
-  val json4sJackson    = "org.json4s"            %% "json4s-jackson"               % V.json4sJackson
-  val cats             = "org.typelevel"         %% "cats-core"                    % V.cats
   val enumeratum       = "com.beachape"          %% "enumeratum"                   % V.enumeratum
-  val igluClient       = "com.snowplowanalytics" %% "iglu-scala-client"            % V.igluClient
+  val igluClient       = ("com.snowplowanalytics" %% "iglu-scala-client"           % V.igluClient)
+    .exclude("com.fasterxml.jackson.core", "jackson-databind")  // Incompatible with Spark
   val eventsManifest   = "com.snowplowanalytics" %% "snowplow-events-manifest"     % V.eventsManifest
   val schemaDdl        = "com.snowplowanalytics" %% "schema-ddl"                   % V.schemaDdl
-  val circeCore        = "io.circe"              %% "circe-core"                   % V.circe          % "test"
-  val circeLiteral     = "io.circe"              %% "circe-literal"                % V.circe          % "test"
+  val circeCore        = "io.circe"              %% "circe-core"                   % V.circe          % Test
+  val circeLiteral     = "io.circe"              %% "circe-literal"                % V.circe          % Test
 
 
   // Scala (test only)
-  val specs2           = "org.specs2"            %% "specs2"                       % V.specs2         % "test"
-  val scalazSpecs2     = "org.typelevel"         %% "scalaz-specs2"                % V.scalazSpecs2   % "test"
-  val scalaCheck       = "org.scalacheck"        %% "scalacheck"                   % V.scalaCheck     % "test"
+  val specs2           = "org.specs2"            %% "specs2-core"                  % V.specs2         % Test
 }

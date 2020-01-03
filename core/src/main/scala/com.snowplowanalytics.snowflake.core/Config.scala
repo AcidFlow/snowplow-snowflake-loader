@@ -63,8 +63,6 @@ object Config {
     case object Stage extends SetupSteps
   }
 
-  implicit val setupStepsRead: scopt.Read[SetupSteps] = scopt.Read.reads(SetupSteps.withNameInsensitive)
-
   /** Available methods to authenticate Snowflake loading */
   sealed trait AuthMethod extends Product with Serializable
   object AuthMethod {
@@ -73,7 +71,11 @@ object Config {
     final case object StageAuth extends AuthMethod
 
     implicit val authMethodCirceDecoder: Decoder[AuthMethod] =
-      deriveDecoder[AuthMethod]
+      List[Decoder[AuthMethod]](
+        deriveDecoder[RoleAuth].widen,
+        deriveDecoder[CredentialsAuth].widen,
+        Decoder.const(StageAuth).widen
+      ).reduce(_ or _)
   }
 
   /** Reference to encrypted entity inside EC2 Parameter Store */
@@ -101,8 +103,16 @@ object Config {
     final case class PlainText(value: String) extends PasswordConfig
     final case class EncryptedKey(value: EncryptedConfig) extends PasswordConfig
 
+    private val plainTextDecoder: Decoder[PlainText] =
+      Decoder[String].map(PlainText.apply)
+    private val encryptedKeyDecoder: Decoder[EncryptedKey] =
+      Decoder[EncryptedConfig].map(EncryptedKey.apply)
+
     implicit val circeJsonPasswordConfigDecoder: Decoder[PasswordConfig] =
-      deriveDecoder[PasswordConfig]
+      List[Decoder[PasswordConfig]](
+        plainTextDecoder.widen,
+        encryptedKeyDecoder.widen
+      ).reduce(_ or _)
   }
 
   /**

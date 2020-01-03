@@ -12,23 +12,33 @@
  */
 package com.snowplowanalytics.snowflake.loader
 
-import  com.snowplowanalytics.snowflake.core.Cli
+import cats.syntax.functor._
+import cats.syntax.apply._
 
-object Main {
-  def main(args: Array[String]): Unit = {
-    Cli.parse(args) match {
+import cats.effect.{ExitCode, IO, IOApp, Sync}
+
+import com.snowplowanalytics.snowflake.core.{Cli, ProcessManifest}
+import com.snowplowanalytics.snowflake.loader.connection.Database
+
+object Main extends IOApp {
+  def run(args: List[String]): IO[ExitCode] =
+    Cli.Loader.parse(args).value.flatMap {
       case Right(Cli.Loader.Load(config, dryRun)) =>
-        println("Loading...")
-        Loader.run(config, dryRun)
-      case Right(Cli.Loader.Setup(config, skip, _)) =>
-        println("Setting up...")
-        Initializer.run(config, skip)
-      case Right(Cli.Loader.Migrate(config, version, _)) =>
-        println("Migrating...")
-        Migrator.run(config, version)
+        val database = Database.init(dryRun)
+        for {
+          state <- ProcessManifest.initState[IO](config.awsRegion)
+          manifest = ProcessManifest.awsSyncProcessManifest[IO](state)
+          connection <- database.getConnection(config)
+          _ <- IO.delay(println("Loading..."))
+          exit <- Loader.run[IO](connection, config)(Sync[IO], database, manifest)
+        } yield exit
+      case Right(Cli.Loader.Setup(config, skip, dryRun)) =>
+        implicit val D: Database[IO] = Database.init(dryRun)
+        IO.delay(println("Setting up...")) *> Initializer.run[IO](config, skip)
+      case Right(Cli.Loader.Migrate(config, version, dryRun)) =>
+        implicit val D: Database[IO] = Database.init(dryRun)
+        IO.delay(println("Migrating...")) *> Migrator.run[IO](config, version)
       case Left(error) =>
-        System.err.println(error)
-        sys.exit(1)
+        IO.delay(System.err.println(error)).as(ExitCode.Error)
     }
-  }
 }

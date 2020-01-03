@@ -45,7 +45,7 @@ object InvalidEnrichedEventSpec {
   """
 }
 
-class InvalidEnrichedEventSpec extends Specification with TransformerJobSpec {
+class InvalidEnrichedEventSpec extends TransformerJobSpec {
   import TransformerJobSpec._
   override def appName = "invalid-enriched-event"
   sequential
