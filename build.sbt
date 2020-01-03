@@ -57,19 +57,15 @@ lazy val transformer = project
 
 lazy val commonDependencies = Seq(
   // Scala
-  Dependencies.cats,
   Dependencies.analyticsSdk,
-  Dependencies.scopt,
+  Dependencies.fs2,
   Dependencies.decline,
-  Dependencies.json4sJackson,
   Dependencies.s3,
   Dependencies.dynamodb,
   Dependencies.enumeratum,
   Dependencies.igluClient,
   Dependencies.eventsManifest,
   // Scala (test-only)
-  Dependencies.specs2,
-  Dependencies.scalazSpecs2,
-  Dependencies.scalaCheck
+  Dependencies.specs2
 )
 

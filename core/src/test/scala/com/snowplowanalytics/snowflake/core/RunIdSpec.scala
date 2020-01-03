@@ -14,7 +14,7 @@ package com.snowplowanalytics.snowflake.core
 
 import collection.mutable
 
-import org.specs2.Specification
+import org.specs2.mutable.Specification
 
 import com.amazonaws.services.dynamodbv2.model.AttributeValue
 
@@ -23,15 +23,14 @@ import org.joda.time.{ DateTime, DateTimeZone }
 import com.snowplowanalytics.snowflake.core.RunId._
 import com.snowplowanalytics.snowflake.core.Config.S3Folder.{coerce => s3}
 
-class RunIdSpec extends Specification { def is = s2"""
-  Parse valid FreshRunId $e2
-  Parse valid ProcessedRunId $e3
-  Parse valid LoadedRunId $e4
-  Parse valid RunId with unknown field $e5
-  Fail to parse RunId without AddedAt $e1
-  Fail to parse RunId with with ProcessedAt, but without ShredTypes $e6
-  Fail to parse RunId with with invalid type $e7
-  """
+class RunIdSpec extends Specification {
+  "Parse valid FreshRunId" in e2
+  "Parse valid ProcessedRunId" in e3
+  "Parse valid LoadedRunId" in e4
+  "Parse valid RunId with unknown field" in e5
+  "Fail to parse RunId without AddedAt" in e1
+  "Fail to parse RunId with with ProcessedAt, but without ShredTypes" in e6
+  "Fail to parse RunId with with invalid type" in e7
 
   def e2 = {
     val input = mutable.Map(

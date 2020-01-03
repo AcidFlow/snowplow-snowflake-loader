@@ -59,16 +59,15 @@ object Transformer {
     duplicateStorage match {
       case Some(storage) =>
         try {
-          val eventId = event.event_id.toString
+          val eventId = event.event_id
           val eventFingerprint = event.event_fingerprint.getOrElse(UUID.randomUUID().toString)
-          val etlTstamp = event.etl_tstamp.map(i => EventsManifest.RedshiftTstampFormatter.format(i))
-            .getOrElse(throw new RuntimeException(s"etl_tstamp in event $eventId is empty or missing"))
+          val etlTstamp = event.etl_tstamp.getOrElse(throw new RuntimeException(s"etl_tstamp in event $eventId is empty or missing"))
           Right(storage.put(eventId, eventFingerprint, etlTstamp))
         } catch {
           case NonFatal(e) =>
             Left(BadRow.SnowflakeFailure(event, NonEmptyList.one(Failure.DeduplicationError(Option(e.getMessage).getOrElse(e.toString)))))
         }
-      case _ => Right(true)
+      case None => Right(true)
     }
   }
 

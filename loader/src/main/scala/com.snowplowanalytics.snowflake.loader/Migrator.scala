@@ -12,38 +12,42 @@
  */
 package com.snowplowanalytics.snowflake.loader
 
-import ast._
+import java.sql.{Connection => JdbcConnection}
+
+import cats.syntax.flatMap._
+import cats.syntax.functor._
+import cats.effect.{ Sync, ExitCode }
+
 import com.snowplowanalytics.snowflake.core.Config
+import com.snowplowanalytics.snowflake.loader.ast._
+import com.snowplowanalytics.snowflake.loader.connection.Database
 import com.snowplowanalytics.snowflake.loader.ast.AlterTable.AlterColumnDatatype
-import connection.Jdbc
 
 /** Module containing functions to migrate Snowflake tables */
 object Migrator {
 
   /** Run migration process */
-  def run(config: Config, loaderVersion: String): Unit = {
+  def run[F[_]: Sync: Database](config: Config, loaderVersion: String): F[ExitCode] = {
+    def alterColumn(connection: Database.Connection, column: String, columnType: SnowflakeDatatype): F[Unit] =
+      Database[F].executeAndOutput(connection, AlterColumnDatatype(config.schema, Defaults.Table, column, columnType))
+
     loaderVersion match {
       case "0.4.0" =>
-        val connection = Jdbc.getConnection(config)
-
-        // Save only static credentials
-        val credentials = PasswordService.getSetupCredentials(config.auth)
-
-        Jdbc.executeAndOutput(connection, AlterColumnDatatype(config.schema, Defaults.Table, "user_ipaddress", SnowflakeDatatype.Varchar(Some(128))))
-        Jdbc.executeAndOutput(connection, AlterColumnDatatype(config.schema, Defaults.Table, "user_fingerprint", SnowflakeDatatype.Varchar(Some(128))))
-        Jdbc.executeAndOutput(connection, AlterColumnDatatype(config.schema, Defaults.Table, "domain_userid", SnowflakeDatatype.Varchar(Some(128))))
-        Jdbc.executeAndOutput(connection, AlterColumnDatatype(config.schema, Defaults.Table, "network_userid", SnowflakeDatatype.Varchar(Some(128))))
-        Jdbc.executeAndOutput(connection, AlterColumnDatatype(config.schema, Defaults.Table, "geo_region", SnowflakeDatatype.Char(3)))
-        Jdbc.executeAndOutput(connection, AlterColumnDatatype(config.schema, Defaults.Table, "ip_organization", SnowflakeDatatype.Varchar(Some(128))))
-        Jdbc.executeAndOutput(connection, AlterColumnDatatype(config.schema, Defaults.Table, "ip_domain", SnowflakeDatatype.Varchar(Some(128))))
-        Jdbc.executeAndOutput(connection, AlterColumnDatatype(config.schema, Defaults.Table, "refr_domain_userid", SnowflakeDatatype.Varchar(Some(128))))
-        Jdbc.executeAndOutput(connection, AlterColumnDatatype(config.schema, Defaults.Table, "domain_sessionid", SnowflakeDatatype.Char(128)))
-
-        connection.close()
+        for {
+          connection <- Database[F].getConnection(config)
+          _ <- alterColumn(connection, "user_ipaddress", SnowflakeDatatype.Varchar(Some(128)))
+          _ <- alterColumn(connection, "user_fingerprint", SnowflakeDatatype.Varchar(Some(128)))
+          _ <- alterColumn(connection, "domain_userid", SnowflakeDatatype.Varchar(Some(128)))
+          _ <- alterColumn(connection, "network_userid", SnowflakeDatatype.Varchar(Some(128)))
+          _ <- alterColumn(connection, "geo_region", SnowflakeDatatype.Varchar(Some(3)))
+          _ <- alterColumn(connection, "ip_organization", SnowflakeDatatype.Varchar(Some(128)))
+          _ <- alterColumn(connection, "ip_domain", SnowflakeDatatype.Varchar(Some(128)))
+          _ <- alterColumn(connection, "refr_domain_userid", SnowflakeDatatype.Varchar(Some(128)))
+          _ <- alterColumn(connection, "domain_sessionid", SnowflakeDatatype.Varchar(Some(128)))
+        } yield ExitCode.Success
       case _ =>
         val message = s"Unrecognized Snowplow Snowflake Loader version: $loaderVersion. (Supported: 0.4.0)"
-        System.err.println(message)
-        sys.exit(1)
+        Sync[F].delay(System.err.println(message)).as(ExitCode.Error)
     }
   }
 }

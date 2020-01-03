@@ -18,51 +18,26 @@ import java.util.UUID
 
 import com.snowplowanalytics.snowflake.transformer.Transformer
 
-// json4s
-import org.json4s.jackson.JsonMethods.fromJsonNode
-
-// scalaz
-import scalaz.{Failure, Success}
-
 // circe
 import io.circe.parser._
 import io.circe.syntax._
 import io.circe.{Json, JsonObject}
 
 // specs2
-import org.specs2.Specification
+import org.specs2.mutable.Specification
 
 // scala-analytics-sdk
 import com.snowplowanalytics.snowplow.analytics.scalasdk.Event
 import com.snowplowanalytics.snowplow.analytics.scalasdk.SnowplowEvent.{Contexts, UnstructEvent}
 
 // iglu
-import com.snowplowanalytics.iglu.client.Resolver
 import com.snowplowanalytics.iglu.core.{SchemaKey, SchemaVer, SelfDescribingData}
-import com.snowplowanalytics.iglu.schemaddl.jsonschema.Schema
-import com.snowplowanalytics.iglu.schemaddl.jsonschema.json4s.implicits.json4sToSchema
 
 // This library
-import com.snowplowanalytics.snowflake.core.Config
+import com.snowplowanalytics.snowflake.transformer.TransformerJobSpec
 
 object TransformerSpec {
-  val resolverBase64 = "eyJzY2hlbWEiOiJpZ2x1OmNvbS5zbm93cGxvd2FuYWx5dGljcy5pZ2x1L3Jlc29sdmVyLWNvbmZpZy9qc29uc2NoZW1hLzEtMC0xIiwiZGF0YSI6eyJjYWNoZVNpemUiOjUsInJlcG9zaXRvcmllcyI6W3sibmFtZSI6IklnbHUgQ2VudHJhbCBiYXNlNjQiLCJwcmlvcml0eSI6MCwidmVuZG9yUHJlZml4ZXMiOlsiY29tLnNub3dwbG93YW5hbHl0aWNzIl0sImNvbm5lY3Rpb24iOnsiaHR0cCI6eyJ1cmkiOiJodHRwOi8vaWdsdWNlbnRyYWwuY29tIn19fV19fQ=="
-
-  val resolver = Config.parseJsonFile(resolverBase64, true) match {
-    case Right(r) => Resolver.parse(r) match {
-      case Success(pr) => pr
-      case Failure(e) => throw new RuntimeException(e.toString)
-    }
-    case Left(e) => throw new RuntimeException(e)
-  }
-
-  val atomicSchema = resolver.lookupSchema("iglu:com.snowplowanalytics.snowplow/atomic/jsonschema/1-0-0") match {
-    case Success(jsonSchema) => Schema.parse(fromJsonNode(jsonSchema)) match {
-      case Some(schema) => schema
-      case None => throw new RuntimeException("Atomic schema was invalid")
-    }
-    case Failure(e) => throw new RuntimeException(e.toString)
-  }
+  val atomicSchema = TransformerJobSpec.atomic
 
   val atomic = atomicSchema.properties.map { properties => properties.value.mapValues { property =>
     property.maxLength.map {_.value.intValue}
@@ -477,11 +452,10 @@ object TransformerSpec {
 class TransformerSpec extends Specification {
   import TransformerSpec._
 
-  def is =
-    s2"""
-  Correctly truncate event fields $e1
-  Correctly transform event to shredded key/JSON pair $e2
-  """
+  "trauncateFields" should {
+    "Correctly truncate event fields" in e1
+    "Correctly transform event to shredded key/JSON pair" in e2
+  }
 
   def e1 = {
     // truncateFields must not break event structure if all fields are in order

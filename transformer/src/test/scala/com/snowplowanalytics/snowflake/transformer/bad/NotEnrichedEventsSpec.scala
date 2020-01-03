@@ -218,7 +218,7 @@ object NotEnrichedEventsSpec {
     """)
 }
 
-class NotEnrichedEventsSpec extends Specification with TransformerJobSpec {
+class NotEnrichedEventsSpec extends TransformerJobSpec {
   import TransformerJobSpec._
   override def appName = "not-enriched-events"
   sequential

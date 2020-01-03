@@ -16,7 +16,7 @@ import com.snowplowanalytics.snowflake.transformer.TransformerJobSpec
 import org.apache.spark.SparkException
 import org.specs2.Specification
 
-class NotStoredBadRowsSpec extends Specification with TransformerJobSpec {
+class NotStoredBadRowsSpec extends TransformerJobSpec {
   private def runTransformerJobWithoutBadRows(lines: TransformerJobSpec.Lines): Unit =
     runTransformerJob(lines, badRowsShouldBeStored = false)
 

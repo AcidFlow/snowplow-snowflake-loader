@@ -16,11 +16,17 @@ import java.time.Instant
 
 import org.apache.spark.sql.{Row, SaveMode, SparkSession}
 import org.apache.spark.sql.types.{StringType, StructField, StructType}
+
 import cats.syntax.either._
+import cats.syntax.foldable._
+import cats.instances.list._
+import cats.effect.IO
+
 import com.snowplowanalytics.iglu.core.{SchemaKey, SelfDescribingData}
 import com.snowplowanalytics.iglu.schemaddl.jsonschema.Schema
-import com.snowplowanalytics.snowplow.eventsmanifest.EventsManifest.EventsManifestConfig
+
 import com.snowplowanalytics.snowplow.analytics.scalasdk.Event
+import com.snowplowanalytics.snowplow.eventsmanifest.EventsManifestConfig
 import com.snowplowanalytics.snowflake.core.ProcessManifest
 import com.snowplowanalytics.snowflake.transformer.singleton.EventsManifestSingleton
 
@@ -56,15 +62,16 @@ object TransformerJob {
   )
 
   /** Process all directories, saving state into DynamoDB */
-  def run(spark: SparkSession, manifest: ProcessManifest, tableName: String, jobConfigs: List[TransformerJobConfig], eventsManifestConfig: Option[EventsManifestConfig], inbatch: Boolean, atomicSchema: Schema): Unit = {
-    jobConfigs.foreach { jobConfig =>
-      println(s"Snowflake Transformer: processing ${jobConfig.runId}. ${System.currentTimeMillis()}")
-      manifest.add(tableName, jobConfig.runId)
-      val shredTypes = process(spark, jobConfig, eventsManifestConfig, inbatch, atomicSchema)
-      manifest.markProcessed(tableName, jobConfig.runId, shredTypes, jobConfig.goodOutput)
-      println(s"Snowflake Transformer: processed ${jobConfig.runId}. ${System.currentTimeMillis()}")
+  def run(spark: SparkSession, manifest: ProcessManifest[IO], tableName: String, jobConfigs: List[TransformerJobConfig], eventsManifestConfig: Option[EventsManifestConfig], inbatch: Boolean, atomicSchema: Schema): IO[Unit] =
+    jobConfigs.traverse_ { jobConfig =>
+      for {
+        _ <- IO(System.out.println(s"Snowflake Transformer: processing ${jobConfig.runId}. ${System.currentTimeMillis()}"))
+        _ <- manifest.add(tableName, jobConfig.runId)
+        shredTypes <- IO(process(spark, jobConfig, eventsManifestConfig, inbatch, atomicSchema))
+        _ <- manifest.markProcessed(tableName, jobConfig.runId, shredTypes, jobConfig.goodOutput)
+        _ <- IO(System.out.println(s"Snowflake Transformer: processed ${jobConfig.runId}. ${System.currentTimeMillis()}"))
+      } yield ()
     }
-  }
 
   /**
     * Transform particular folder to Snowflake-compatible format and
