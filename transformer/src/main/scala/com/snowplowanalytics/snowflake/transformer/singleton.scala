@@ -14,7 +14,7 @@ package com.snowplowanalytics.snowflake.transformer
 
 import com.amazonaws.client.builder.AwsClientBuilder.EndpointConfiguration
 import com.amazonaws.services.dynamodbv2.AmazonDynamoDBClientBuilder
-import com.snowplowanalytics.snowplow.eventsmanifest.{DynamoDbConfig, DynamoDbManifest, EventsManifest}
+import com.snowplowanalytics.snowplow.eventsmanifest.{DynamoDbManifest, EventsManifest, EventsManifestConfig}
 
 /** Singletons needed for unserializable or stateful classes. */
 object singleton {
@@ -36,7 +36,7 @@ object singleton {
           if (instance == null) {
             synchronized {
               instance = config match {
-                case DynamoDbConfig("local", None, region, table) =>
+                case EventsManifestConfig.DynamoDb(_, "local", None, region, table) =>
                   val client = AmazonDynamoDBClientBuilder
                     .standard()
                     .withEndpointConfiguration(new EndpointConfiguration("http://localhost:8000", region))

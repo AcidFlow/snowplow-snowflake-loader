@@ -21,8 +21,6 @@ import io.circe.parser._
 
 import cats.implicits._
 
-import scalaz.{Failure, Success}
-
 import scala.collection.JavaConverters._
 
 import com.amazonaws.client.builder.AwsClientBuilder.EndpointConfiguration
@@ -30,7 +28,7 @@ import com.amazonaws.services.dynamodbv2.AmazonDynamoDBClientBuilder
 import com.amazonaws.services.dynamodbv2.document.Table
 import com.amazonaws.services.dynamodbv2.model.{ResourceNotFoundException, ScanRequest}
 
-import com.snowplowanalytics.snowplow.eventsmanifest.{DynamoDbConfig, DynamoDbManifest, EventsManifest}
+import com.snowplowanalytics.snowplow.eventsmanifest.{DynamoDbManifest, EventsManifest, EventsManifestConfig}
 import com.snowplowanalytics.snowflake.transformer.TransformerJobSpec
 
 import org.specs2.Specification
@@ -108,7 +106,7 @@ object CrossBatchDeduplicationSpec {
     private[good] def prepareLocalTable() = {
       val storage = getStorage().valueOr(e => throw new RuntimeException(e))
       dupeStorage.foreach { case DuplicateTriple(eid, fp, etlTstamp) =>
-        storage.put(eid.toString, fp.toString, etlTstamp.formatted)
+        storage.put(eid, fp, etlTstamp)
       }
     }
 
@@ -117,7 +115,7 @@ object CrossBatchDeduplicationSpec {
       * It'll delete table if it exist and recreate new one
       */
     private def getStorage() = {
-      def build(): DynamoDbConfig = {
+      def build(): EventsManifestConfig.DynamoDb = {
         try {   // Send request to delete previously created table and wait unit it is deleted
           println("Deleting the table")
           client.deleteTable(dynamodbDuplicateStorageTable)
@@ -128,9 +126,10 @@ object CrossBatchDeduplicationSpec {
             println("The table didn't exist, skipping")
         }
 
-        val config = DynamoDbConfig(
+        val config = EventsManifestConfig.DynamoDb(
+          id = None,
           name = "Duplicate Storage Integration Test",
-          auth = Some(DynamoDbConfig.CredentialsAuth("fake", "fake")),
+          auth = Some(EventsManifestConfig.DynamoDb.Credentials("fake", "fake")),
           awsRegion = dynamodbDuplicateStorageRegion,
           dynamodbTable = dynamodbDuplicateStorageTable
         )
@@ -141,8 +140,8 @@ object CrossBatchDeduplicationSpec {
       val config = build()
 
       EventsManifest.initStorage(config) match {
-        case Success(t) => t.asRight[Throwable]
-        case Failure(_) =>
+        case Right(t) => t.asRight[Throwable]
+        case Left(_) =>
           DynamoDbManifest.createTable(client, config.dynamodbTable, None, None)
           println("Table has been created")
           val table = DynamoDbManifest.checkTable(client, dynamodbDuplicateStorageTable)
@@ -159,7 +158,7 @@ object CrossBatchDeduplicationSpec {
   }
 }
 
-class CrossBatchDeduplicationSpec extends Specification with TransformerJobSpec {
+class CrossBatchDeduplicationSpec extends TransformerJobSpec {
   import TransformerJobSpec._
   override def appName = "cross-batch-deduplication"
   sequential
@@ -172,7 +171,7 @@ class CrossBatchDeduplicationSpec extends Specification with TransformerJobSpec 
     "remove cross-batch duplicate and store left event in good output" in {
       val Some((lines, f)) = readPartFile(dirs.output, "")
       expectedFiles += f
-      lines.map(parse).sequence mustEqual Right(CrossBatchDeduplicationSpec.expected.transformedEvents)
+      lines.map(parse).sequence must beRight(CrossBatchDeduplicationSpec.expected.transformedEvents)
     }
 
     "shred two unique events out of cross-batch and in-batch duplicates" in {
@@ -183,7 +182,7 @@ class CrossBatchDeduplicationSpec extends Specification with TransformerJobSpec 
         CrossBatchDeduplicationSpec.uniqueUuid,
         CrossBatchDeduplicationSpec.inbatchDupeUuid
       ).map(_.toString)
-      eventIds mustEqual Right(expectedUuids)
+      eventIds must beRight(expectedUuids)
     }
 
     "store exactly 5 known rows in DynamoDB" in {
@@ -198,7 +197,7 @@ class CrossBatchDeduplicationSpec extends Specification with TransformerJobSpec 
     }
 
     "not shred any unexpected JSONs" in {
-      listFilesWithExclusions(dirs.output, expectedFiles.toList) must be empty
+      listFilesWithExclusions(dirs.output, expectedFiles.toList) must beEmpty
     }
 
     "not write any bad row JSONs" in {

@@ -15,11 +15,14 @@ package com.snowplowanalytics.snowflake.transformer.bad
 import java.io.File
 
 import cats.implicits._
+
 import io.circe.literal._
 import io.circe.parser.parse
+
 import com.snowplowanalytics.snowflake.core.BadRowSchemas
 import com.snowplowanalytics.snowflake.generated.ProjectMetadata
 import com.snowplowanalytics.snowflake.transformer.TransformerJobSpec
+
 import org.specs2.Specification
 
 object EnrichedEventWithInvalidTimestampSpec {
@@ -50,7 +53,7 @@ object EnrichedEventWithInvalidTimestampSpec {
   """
 }
 
-class EnrichedEventWithInvalidTimestampSpec extends Specification with TransformerJobSpec {
+class EnrichedEventWithInvalidTimestampSpec extends TransformerJobSpec {
   import TransformerJobSpec._
   override def appName = "enriched-event-with-invalid-timestamp"
   sequential

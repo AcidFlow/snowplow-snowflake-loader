@@ -12,41 +12,31 @@
  */
 package com.snowplowanalytics.snowflake.loader
 
-import ast._
+import cats.effect.{ Sync, ExitCode }
+import cats.syntax.flatMap._
+import cats.syntax.functor._
+
 import com.snowplowanalytics.snowflake.core.Config
 import com.snowplowanalytics.snowflake.core.Config.SetupSteps
-import connection.Jdbc
+import com.snowplowanalytics.snowflake.loader.ast._
+import com.snowplowanalytics.snowflake.loader.connection.Database
 
 /** Module containing functions to setup Snowflake table for Enriched events */
 object Initializer {
 
   /** Run setup process */
-  def run(config: Config, skip: Set[SetupSteps]): Unit = {
-    val connection = Jdbc.getConnection(config)
+  def run[F[_]: Sync: Database](config: Config, skip: Set[SetupSteps]): F[ExitCode] = {
+    def execute[S: Statement](connection: Database.Connection, step: SetupSteps, statement: S): F[Unit] =
+      if (!skip.contains(step)) Database[F].executeAndOutput(connection, statement) else Sync[F].unit
 
-    // Save only static credentials
-    val credentials = PasswordService.getSetupCredentials(config.auth)
-
-    if (!skip.contains(SetupSteps.Schema)) {
-      Jdbc.executeAndOutput(connection, CreateSchema(config.schema))
-    }
-
-    if (!skip.contains(SetupSteps.Table)) {
-      Jdbc.executeAndOutput(connection, AtomicDef.getTable(config.schema))
-    }
-
-    if (!skip.contains(SetupSteps.Warehouse)) {
-      Jdbc.executeAndOutput(connection, CreateWarehouse(config.warehouse, size = Some(CreateWarehouse.XSmall), autoSuspend = Some(300), autoResume = Some(true)))
-    }
-
-    if (!skip.contains(SetupSteps.FileFormat)) {
-      Jdbc.executeAndOutput(connection, CreateFileFormat.CreateJsonFormat(Defaults.FileFormat))
-    }
-
-    if (!skip.contains(SetupSteps.Stage)) {
-      Jdbc.executeAndOutput(connection, CreateStage(config.stage, config.stageUrl, Defaults.FileFormat, config.schema, credentials))
-    }
-    
-    connection.close()
+    for {
+      connection <- Database[F].getConnection(config)
+      credentials = PasswordService.getSetupCredentials(config.auth)
+      _ <- execute(connection, SetupSteps.Schema, CreateSchema(config.schema))
+      _ <- execute(connection, SetupSteps.Table, AtomicDef.getTable(config.schema))
+      _ <- execute(connection, SetupSteps.Warehouse, CreateWarehouse(config.warehouse, Some(CreateWarehouse.XSmall), Some(300), Some(true)))
+      _ <- execute(connection, SetupSteps.FileFormat, CreateFileFormat.CreateJsonFormat(Defaults.FileFormat))
+      _ <- execute(connection, SetupSteps.Stage, CreateStage(config.stage, config.stageUrl, Defaults.FileFormat, config.schema, credentials))
+    } yield ExitCode.Success
   }
 }

@@ -27,21 +27,22 @@ import org.apache.spark.SparkConf
 import org.apache.spark.sql.SparkSession
 
 import cats.syntax.option._
+import cats.syntax.either._
 
-import scalaz.{Failure, Success}
-
-import org.json4s.jackson.JsonMethods.fromJsonNode
-
-import com.snowplowanalytics.iglu.schemaddl.jsonschema.json4s.implicits.json4sToSchema
 import com.snowplowanalytics.iglu.schemaddl.jsonschema.Schema
+import com.snowplowanalytics.iglu.schemaddl.jsonschema.circe.implicits._
 import com.snowplowanalytics.iglu.client.Resolver
-import com.snowplowanalytics.snowflake.core.Config
+
+import com.snowplowanalytics.snowflake.core.{ Cli, idClock }
 import com.snowplowanalytics.snowflake.transformer.TransformerJobConfig.FSConfig
-import com.snowplowanalytics.snowplow.eventsmanifest.DynamoDbConfig
+import com.snowplowanalytics.snowplow.eventsmanifest.EventsManifestConfig
 
 import org.apache.spark.serializer.KryoSerializer
+
+import org.specs2.mutable.Specification
 import org.specs2.matcher.Matcher
 import org.specs2.matcher.Matchers._
+import org.specs2.specification.BeforeAfterAll
 
 object TransformerJobSpec {
   /** Case class representing the input lines written in a file. */
@@ -160,7 +161,7 @@ object TransformerJobSpec {
                ): File = {
     val f = File.createTempFile(s"snowplow-shred-job-${tag}-", "")
     if (createParents) f.mkdirs() else f.mkdir()
-    containing.map(_.writeTo(f))
+    containing.foreach(_.writeTo(f))
     f
   }
 
@@ -175,23 +176,21 @@ object TransformerJobSpec {
 
   val resolverBase64 = "eyJzY2hlbWEiOiJpZ2x1OmNvbS5zbm93cGxvd2FuYWx5dGljcy5pZ2x1L3Jlc29sdmVyLWNvbmZpZy9qc29uc2NoZW1hLzEtMC0xIiwiZGF0YSI6eyJjYWNoZVNpemUiOjUsInJlcG9zaXRvcmllcyI6W3sibmFtZSI6IklnbHUgQ2VudHJhbCBiYXNlNjQiLCJwcmlvcml0eSI6MCwidmVuZG9yUHJlZml4ZXMiOlsiY29tLnNub3dwbG93YW5hbHl0aWNzIl0sImNvbm5lY3Rpb24iOnsiaHR0cCI6eyJ1cmkiOiJodHRwOi8vaWdsdWNlbnRyYWwuY29tIn19fV19fQ=="
 
-  val resolver = Config.parseJsonFile(resolverBase64, true) match {
-    case Right(r) => Resolver.parse(r) match {
-      case Success(pr) => pr
-      case Failure(e) => throw new RuntimeException(e.toString)
-    }
-    case Left(e) => throw new RuntimeException(e)
-  }
+  val resolver = Cli
+    .Base64Encoded
+    .parse(resolverBase64)
+    .flatMap(r => Resolver.parse(r.json).leftMap(_.toString))
+    .valueOr(e => throw new RuntimeException(s"Cannot parse test Iglu Resolver $e"))
 
   // Get Atomic schema from Iglu
-  val atomic = resolver.lookupSchema("iglu:com.snowplowanalytics.snowplow/atomic/jsonschema/1-0-0") match {
-    case Success(jsonSchema) => Schema.parse(fromJsonNode(jsonSchema)) match {
+  val atomic = resolver.lookupSchema(Main.AtomicSchema) match {
+    case Right(jsonSchema) => Schema.parse(jsonSchema) match {
       case Some(schema) => schema
       case None =>
         println("Atomic event schema was invalid")
         sys.exit(1)
     }
-    case Failure(error) =>
+    case Left(error) =>
       println("Cannot get atomic event schema")
       println(error)
       sys.exit(1)
@@ -200,7 +199,8 @@ object TransformerJobSpec {
   val dynamodbDuplicateStorageTable = "snowplow-integration-test-crossbatch-deduplication"
   val dynamodbDuplicateStorageRegion = "us-east-1"
 
-  val duplicateStorageConfig = DynamoDbConfig(
+  val duplicateStorageConfig = EventsManifestConfig.DynamoDb(
+    None,
     "local",
     None,
     dynamodbDuplicateStorageRegion,
@@ -209,7 +209,7 @@ object TransformerJobSpec {
 }
 
 /** Trait to mix in in every spec for the transformer job. */
-trait TransformerJobSpec extends BeforeAfterAll {
+trait TransformerJobSpec extends Specification with BeforeAfterAll {
   import TransformerJobSpec._
   val dirs = OutputDirs(randomFile("output"), randomFile("bad-rows"))
 
@@ -243,5 +243,9 @@ trait TransformerJobSpec extends BeforeAfterAll {
   }
   override def afterAll(): Unit = {
     dirs.deleteAll()
+  }
+
+  override def beforeAll(): Unit = {
+    ()
   }
 }

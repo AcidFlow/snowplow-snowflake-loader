@@ -182,17 +182,18 @@ object EventDeduplicationSpec {
 
 }
 
-class EventDeduplicationSpec extends Specification with TransformerJobSpec {
+class EventDeduplicationSpec extends TransformerJobSpec {
   import EventDeduplicationSpec._
   import TransformerJobSpec._
   override def appName = "event-deduplicaiton"
+
   sequential
   "A job which is provided with a two events with same event_id" should {
     runTransformerJob(lines, true)
 
     "transform two duplicate enriched events and store only first of them" in {
-      val Some((lines, f)) = readPartFile(dirs.output, "")
-      lines.map(parse).sequence mustEqual Right(List(expected))
+      val Some((lines, _)) = readPartFile(dirs.output, "")
+      lines.map(parse).sequence must beRight(List(expected))
     }
 
     "not write any bad row JSONs" in {
