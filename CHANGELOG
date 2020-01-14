@@ -1,3 +1,13 @@
+Version 0.6.0 (2020-01-16)
+--------------------------
+Extend copyright notice to 2020 (#96)
+Truncate long VARCHAR fields on loading (#99)
+Switch to tagless final API (#95)
+Replace scopt with decline (#93)
+Bump Snowflake JDBC driver to 3.11.0 (#69)
+Remove vagrant setup (#89)
+Add test specification for ProcessManifest (#97)
+
 Version 0.5.0 (2019-08-28)
 --------------------------
 Common: remove 'Bump Snowflake JDBC driver to 3.6.22' entry from CHANGELOG (#71)
