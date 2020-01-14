@@ -12,6 +12,9 @@
  */
 package com.snowplowanalytics.snowflake.loader.ast
 
+import cats.Show
+import cats.syntax.show._
+
 import Select._
 
 /**
@@ -23,6 +26,18 @@ import Select._
 case class Select(columns: List[CastedColumn], schema: String, table: String)
 
 object Select {
-  case class CastedColumn(originColumn: String, columnName: String, datatype: SnowflakeDatatype, substring: Option[Substring] = None)
+  case class CastedColumn(originColumn: String, columnName: String, datatype: SnowflakeDatatype, substring: Option[Substring], tryCast: Boolean)
   case class Substring(start: Int, length: Int)
+
+  implicit val castedColumnShow: Show[Select.CastedColumn] =
+    new Show[Select.CastedColumn] {
+      def show(column: Select.CastedColumn): String = {
+        val castedColumn = if (column.tryCast) s"TRY_CAST(${column.originColumn}:${column.columnName} as ${column.datatype.show})"
+        else s"${column.originColumn}:${column.columnName}::${column.datatype.show}"
+        column.substring match {
+          case Some(Substring(start, length)) => s"substr($castedColumn,$start,$length)"
+          case None => castedColumn
+        }
+      }
+    }
 }

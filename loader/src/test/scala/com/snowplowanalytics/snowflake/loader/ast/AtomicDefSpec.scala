@@ -16,11 +16,11 @@ import org.specs2.mutable.Specification
 
 import scala.io.Source
 
+import com.snowplowanalytics.snowflake.loader.ast.Statement._
+
 class AtomicDefSpec extends Specification {
   "getTable" should {
     "CREATE atomic.events" in {
-//      import AtomicDefSpec._
-
       val referenceStream = getClass.getResourceAsStream("/sql/atomic-def.sql")
       val expectedLines = Source.fromInputStream(referenceStream).getLines().toList
       val expected = List(AtomicDefSpec.normalizeSql(expectedLines).mkString(""))

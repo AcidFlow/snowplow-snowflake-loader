@@ -21,6 +21,7 @@ import cats.effect.{ Sync, ExitCode }
 import ast.{ Show => StatementShow, _ }
 import core.{ Config, RunId, ProcessManifest }
 import loader.connection.Database
+import loader.ast.Statement._
 
 object Loader {
 
@@ -66,7 +67,7 @@ object Loader {
     * @param config Snowflake JSON configuration
     * @return application exit code based [[Error]]
     */
-  def run[F[_]: Sync: Database: ProcessManifest](connection: Database.Connection, config: Config): F[ExitCode] = {
+  def run[F[_]: Sync: Database: ProcessManifest](connection: Database.Connection, config: Config, tryCast: Boolean): F[ExitCode] = {
     def initWarehouse: F[Unit] =
       Database[F].execute(connection, UseWarehouse(config.warehouse)) *> {
         Database[F].execute(connection, AlterWarehouse.Resume(config.warehouse)) *>
@@ -81,7 +82,7 @@ object Loader {
       state <- ProcessManifest[F].scan(config.manifest).toAction.map(SnowflakeState.getState)
       _ <- EitherT.fromEither[F](checkFoldersStage(state.foldersToLoad, config.stageUrl))
       _ <- initWarehouse.toAction
-      _ <- state.foldersToLoad.traverse_(loadFolder[F](connection, config))
+      _ <- state.foldersToLoad.traverse_(loadFolder[F](connection, config, tryCast))
     } yield ()
 
     action.value.flatMap {
@@ -101,14 +102,14 @@ object Loader {
     * @param folder run id, extracted from manifest; processed, but not yet loaded
     */
   def loadFolder[F[_]: Database: ProcessManifest: Sync: ThrowingM]
-                (connection: Database.Connection, config: Config)
+                (connection: Database.Connection, config: Config, tryCast: Boolean)
                 (folder: SnowflakeState.FolderToLoad): Action[F, Unit] = {
     val runId = folder.folderToLoad.runIdFolder
     val tempTable = getTempTable(runId, config.schema)
     val transactionName = s"snowplow_${folder.folderToLoad.runIdFolder}".replaceAll("=", "_").replaceAll("-", "_")
 
     val action: Action[F, Unit] = for {
-      loadStatement <- EitherT.fromEither[F](getInsertStatement(config, folder.folderToLoad))
+      loadStatement <- EitherT.fromEither[F](getInsertStatement(config, tryCast, folder.folderToLoad))
       _ <- Database[F].startTransaction(connection, Some(transactionName)).toAction
       columns <- EitherT(addColumns[F](connection, config.schema, folder))
       _ <- Sync[F].delay { if (columns.isEmpty)
@@ -166,10 +167,12 @@ object Loader {
     * Create INSERT statement to load Processed Run Id
     * Returns error in
     */
-  def getInsertStatement(config: Config, folder: RunId.ProcessedRunId): Either[Error, Insert] =
+  def getInsertStatement(config: Config, tryCast: Boolean, folder: RunId.ProcessedRunId): Either[Error, Insert] =
     getColumns(folder.shredTypes) match {
       case Right(tableColumns) =>
-        val castedColumns = tableColumns.map { case (name, dataType) => Select.CastedColumn(Defaults.TempTableColumn, name, dataType) }
+        val castedColumns = tableColumns.map {
+          case (name, dataType) => Select.CastedColumn(Defaults.TempTableColumn, name, dataType, None, tryCast)
+        }
         val tempTable = getTempTable(folder.runIdFolder, config.schema)
         val source = Select(castedColumns, tempTable.schema, tempTable.name)
         Right(Insert.InsertQuery(config.schema, Defaults.Table, tableColumns.map(_._1), source))

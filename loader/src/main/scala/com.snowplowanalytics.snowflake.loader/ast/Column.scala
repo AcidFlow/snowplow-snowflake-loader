@@ -12,8 +12,23 @@
  */
 package com.snowplowanalytics.snowflake.loader.ast
 
+import cats.Show
+import cats.syntax.show._
+
 case class Column(
   name: String,
   dataType: SnowflakeDatatype,
   notNull: Boolean = false,
   unique: Boolean = false)
+
+object Column {
+
+  implicit object ColumnShow extends Show[Column] {
+    def show(ddl: Column): String = {
+      val datatype = ddl.dataType.show
+      val constraints = ((if (ddl.notNull) "NOT NULL" else "") :: (if (ddl.unique) "UNIQUE" else "") :: Nil).filterNot(_.isEmpty)
+      val renderedConstraints = if (constraints.isEmpty) "" else " " + constraints.mkString(" ")
+      s"${ddl.name} $datatype" + renderedConstraints
+    }
+  }
+}

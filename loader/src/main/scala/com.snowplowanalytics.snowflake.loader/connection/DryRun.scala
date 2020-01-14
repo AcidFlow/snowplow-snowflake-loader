@@ -19,6 +19,7 @@ import cats.effect.{ Sync, IO }
 import cats.effect.concurrent.Ref
 
 import ast._
+import com.snowplowanalytics.snowflake.loader.ast.Statement._
 import com.snowplowanalytics.snowflake.core.Config
 
 object DryRun {
@@ -93,14 +94,12 @@ object DryRun {
   private def log[S: Statement](state: Connection, statement: S) =
     state.update { s =>
       val updated = statement.getStatement.value :: s.messages
-      // System.out.println(message)
       s.copy(messages = updated)
     }
 
   private def log(state: Connection, message: String) =
     state.update { s =>
       val updated = message :: s.messages
-      System.out.println(s"OO $message")
       s.copy(messages = updated)
     }
 

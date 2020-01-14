@@ -23,6 +23,11 @@ object Statement {
 
   final case class SqlStatement private(value: String) extends AnyVal
 
+  implicit class StatementSyntax[S](val ast: S) extends AnyVal {
+    def getStatement(implicit S: Statement[S]): Statement.SqlStatement =
+      S.getStatement(ast)
+  }
+
   implicit object CreateTableStatement extends Statement[CreateTable] {
     def getStatement(ddl: CreateTable): SqlStatement = {
       val constraint = ddl.primaryKey.map { p => ", " + p.show }.getOrElse("")
@@ -107,12 +112,12 @@ object Statement {
     }
   }
 
-  implicit object UseWarehouseStatement extends Statement[UseWarehouse] {
+  implicit val useWarehouseStatement: Statement[UseWarehouse] = new Statement[UseWarehouse] {
     def getStatement(ast: UseWarehouse): SqlStatement =
       SqlStatement(s"USE WAREHOUSE ${ast.warehouse}")
   }
 
-  implicit object CopyInto extends Statement[CopyInto] {
+  implicit val copyIntoStatement: Statement[CopyInto] = new Statement[CopyInto] {
     def getStatement(ast: CopyInto): SqlStatement = {
       val credentials = ast.credentials match {
         case Some(c) =>

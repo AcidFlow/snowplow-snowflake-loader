@@ -12,6 +12,8 @@
  */
 package com.snowplowanalytics.snowflake.loader.ast
 
+import cats.Show
+
 sealed trait SnowflakeDatatype
 
 object SnowflakeDatatype {
@@ -26,4 +28,22 @@ object SnowflakeDatatype {
   case object Variant extends SnowflakeDatatype
   case object JsonObject extends SnowflakeDatatype
   case object JsonArray extends SnowflakeDatatype
+
+  implicit object DatatypeShow extends Show[SnowflakeDatatype] {
+    def show(ddl: SnowflakeDatatype): String = ddl match {
+      case Varchar(Some(size))      => s"VARCHAR($size)"
+      case Varchar(None)            => s"VARCHAR"
+      case Timestamp                => "TIMESTAMP"
+      case Char(size)               => s"CHAR($size)"
+      case SmallInt                 => "SMALLINT"
+      case DoublePrecision          => "DOUBLE PRECISION"
+      case Integer                  => "INTEGER"
+      case Number(precision, scale) => s"NUMBER($precision,$scale)"
+      case Boolean                  => "BOOLEAN"
+      case Variant                  => "VARIANT"
+      case JsonObject               => "OBJECT"
+      case JsonArray                => "ARRAY"
+    }
+  }
+
 }
