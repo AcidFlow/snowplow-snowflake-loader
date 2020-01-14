@@ -125,11 +125,11 @@ object Cli {
       def resolver: PathOrJson
     }
 
-    final case class LoadRaw(loaderConfig: PathOrJson, resolver: PathOrJson, dryRun: Boolean) extends RawCli
+    final case class LoadRaw(loaderConfig: PathOrJson, resolver: PathOrJson, dryRun: Boolean, tryCast: Boolean) extends RawCli
     final case class SetupRaw(loaderConfig: PathOrJson, resolver: PathOrJson, skip: Set[SetupSteps], dryRun: Boolean) extends RawCli
     final case class MigrateRaw(loaderConfig: PathOrJson, resolver: PathOrJson, loaderVersion: String, dryRun: Boolean) extends RawCli
 
-    final case class Load(loaderConfig: Config, dryRun: Boolean) extends Loader
+    final case class Load(loaderConfig: Config, dryRun: Boolean, tryCast: Boolean) extends Loader
     final case class Setup(loaderConfig: Config, skip: Set[SetupSteps], dryRun: Boolean) extends Loader
     final case class Migrate(loaderConfig: Config, loaderVersion: String, dryRun: Boolean) extends Loader
 
@@ -148,7 +148,7 @@ object Cli {
         _ <- igluClient.check(configData).leftMap(e => s"Iglu validation failed with following error\n: ${e.asJson.spaces2}")
         cfg <- configData.data.as[Config].toEitherT[IO].leftMap(e => s"Error while decoding configuration JSON, ${e.show}")
       } yield rawCli match {
-        case LoadRaw(_, _, dryRun) => Load(cfg, dryRun)
+        case LoadRaw(_, _, dryRun, tryCast) => Load(cfg, dryRun, tryCast)
         case SetupRaw(_, _, skip, dryRun) => Setup(cfg, skip, dryRun)
         case MigrateRaw(_, _, version, dryRun) => Migrate(cfg, version, dryRun)
       }
@@ -167,6 +167,7 @@ object Cli {
   val base64 = Opts.flag("base64", "Configuration passed as Base64-encoded string, not as file path").orFalse
   val version = Opts.option[String]("loader-version", s"Snowplow Snowflake Loader version to make the table compatible with")
   val steps = Opts.options[SetupSteps]("skip", s"Skip the setup step. Available steps: ${Config.SetupSteps.values}").orNone.map(_.toList.unite.toSet)
+  val tryCast = Opts.flag("try-cast", s"Use TRY_CAST operator instead of CAST, droping all data not conforming").orFalse
 
   val resolver = Opts.option[String]("resolver", "Iglu Resolver JSON config, FS path or base64-encoded")
   val resolverEncoded = Opts.option[Base64Encoded]("resolver", "Iglu Resolver JSON config, base64-encoded")
@@ -186,9 +187,9 @@ object Cli {
   }
   val migrate = Opts.subcommand(Command("migrate", "Load data into a warehouse", true)(migrateOpt))
 
-  val loadOpt = (config, base64, dryRun, resolver).tupled.mapValidated {
-    case (cfg, encoded, dry, res) =>
-      (PathOrJson.parse(cfg, encoded), PathOrJson.parse(res, encoded)).mapN { (c, r) => Loader.LoadRaw(c, r, dry) }
+  val loadOpt = (config, base64, dryRun, resolver, tryCast).tupled.mapValidated {
+    case (cfg, encoded, dry, res, tc) =>
+      (PathOrJson.parse(cfg, encoded), PathOrJson.parse(res, encoded)).mapN { (c, r) => Loader.LoadRaw(c, r, dry, tc) }
   }
   val load = Opts.subcommand(Command("load", "Load data into a warehouse", true)(loadOpt))
 

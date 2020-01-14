@@ -146,7 +146,7 @@ class ConfigSpec extends Specification {
         database = "test_db",
         maxError = None,
         jdbcHost = None),
-      true)
+      true, false)
 
     Cli.Loader.parse(args).value.unsafeRunSync() must beRight(expected)
   }
@@ -210,7 +210,7 @@ class ConfigSpec extends Specification {
         database = "test_db",
         maxError = None,
         jdbcHost = None),
-      true)
+      true, false)
 
     Cli.Loader.parse(args).value.unsafeRunSync() must beRight(expected)
 
@@ -301,7 +301,8 @@ class ConfigSpec extends Specification {
 
       "--dry-run",
       "--resolver", s"${resolverUrl.getPath}",
-      "--config", s"${secureConfigUrl.getPath}").toArray
+      "--config", s"${secureConfigUrl.getPath}",
+      "--try-cast").toArray
 
     val expected = Cli.Loader.Load(
       Config(
@@ -326,7 +327,7 @@ class ConfigSpec extends Specification {
         database = "test_db",
         maxError = None,
         jdbcHost = None),
-      true)
+      true, true)
 
     Cli.Loader.parse(args).value.unsafeRunSync() must beRight(expected)
   }
@@ -359,7 +360,7 @@ class ConfigSpec extends Specification {
         database = "test_db",
         maxError = None,
         jdbcHost = None),
-      true)
+      true, false)
 
     Cli.Loader.parse(args).value.unsafeRunSync() must beRight(expected)
   }
@@ -521,7 +522,7 @@ class ConfigSpec extends Specification {
         database = "test_db",
         maxError = Some(10000),
         jdbcHost = Some("snowplow.us-west-1.azure.snowflakecomputing.com")),
-      true)
+      true, false)
 
     Cli.Loader.parse(args).value.unsafeRunSync() must beRight(expected)
   }

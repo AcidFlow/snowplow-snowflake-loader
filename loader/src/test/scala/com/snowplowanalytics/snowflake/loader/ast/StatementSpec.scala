@@ -16,6 +16,7 @@ import org.specs2.mutable.Specification
 
 import com.snowplowanalytics.snowflake.core.Config
 import com.snowplowanalytics.snowflake.loader.ast.Select.Substring
+import com.snowplowanalytics.snowflake.loader.ast.Statement._
 
 class StatementSpec extends Specification {
 
@@ -23,11 +24,12 @@ class StatementSpec extends Specification {
     "Transform CREATE TABLE AST into String" in e1
     "Transform COPY INTO AST into String" in e2
     "Transform INSERT INTO AST into String" in e3
-    "Transform SHOW into String" in e4
-    "Transform COPY INTO AST (without credentials) into String" in e5
-    "Transform CREATE STAGE AST into String"  in e6
-    "Transform COPY INTO AST (with stripping nulls) into String" in e7
-    "Transform CREATE WAREHOUSE AST into String" in e8
+    "Transform INSERT INTO AST with TRY_CAST into String" in e4
+    "Transform SHOW into String" in e5
+    "Transform COPY INTO AST (without credentials) into String" in e6
+    "Transform CREATE STAGE AST into String"  in e7
+    "Transform COPY INTO AST (with stripping nulls) into String" in e8
+    "Transform CREATE WAREHOUSE AST into String" in e9
   }
 
   def e1 = {
@@ -68,9 +70,9 @@ class StatementSpec extends Specification {
 
   def e3 = {
     val columns = List(
-      Select.CastedColumn("orig_col", "dest_column", SnowflakeDatatype.Variant),
-      Select.CastedColumn("orig_col", "next", SnowflakeDatatype.DoublePrecision),
-      Select.CastedColumn("orig_col", "third", SnowflakeDatatype.Number(1, 2), Some(Substring(1, 255))))
+      Select.CastedColumn("orig_col", "dest_column", SnowflakeDatatype.Variant, None, false),
+      Select.CastedColumn("orig_col", "next", SnowflakeDatatype.DoublePrecision, None, false),
+      Select.CastedColumn("orig_col", "third", SnowflakeDatatype.Number(1, 2), Some(Substring(1, 255)), false))
     val select = Select(columns, "some_schema", "tmp_table")
     val input = Insert.InsertQuery("not_atomic", "events", List("one", "two", "three"), select)
 
@@ -83,13 +85,29 @@ class StatementSpec extends Specification {
   }
 
   def e4 = {
+    val columns = List(
+      Select.CastedColumn("orig_col", "dest_column", SnowflakeDatatype.Variant, None, true),
+      Select.CastedColumn("orig_col", "next", SnowflakeDatatype.DoublePrecision, None, true),
+      Select.CastedColumn("orig_col", "third", SnowflakeDatatype.Number(1, 2), Some(Substring(1, 255)), true))
+    val select = Select(columns, "some_schema", "tmp_table")
+    val input = Insert.InsertQuery("not_atomic", "events", List("one", "two", "three"), select)
+
+    val result = input.getStatement.value
+    val expected = "INSERT INTO not_atomic.events(one,two,three) " +
+      "SELECT TRY_CAST(orig_col:dest_column as VARIANT), TRY_CAST(orig_col:next as DOUBLE PRECISION), substr(TRY_CAST(orig_col:third as NUMBER(1,2)),1,255) " +
+      "FROM some_schema.tmp_table"
+
+    result must beEqualTo(expected)
+  }
+
+  def e5 = {
     val ast = Show.ShowStages(Some("s3://archive"), Some("atomic"))
     val result = ast.getStatement.value
     val expected = "SHOW stages LIKE 's3://archive' IN atomic"
     result must beEqualTo(expected)
   }
 
-  def e5 = {
+  def e6 = {
     val columns = List("id", "foo", "fp_id", "json")
     val input = CopyInto(
       "some_schema",
@@ -110,7 +128,7 @@ class StatementSpec extends Specification {
     result must beEqualTo(expected)
   }
 
-  def e6 = {
+  def e7 = {
     val statement = CreateStage("snowplow_stage", Config.S3Folder.coerce("s3://cross-batch"), "JSON", "atomic", Some(Common.AwsCreds("ACCESS", "secret", None)))
 
     val result = statement.getStatement.value
@@ -119,7 +137,7 @@ class StatementSpec extends Specification {
     result must beEqualTo(expected)
   }
 
-  def e7 = {
+  def e8 = {
     val columns = List("id", "foo", "fp_id", "json")
     val input = CopyInto(
       "some_schema",
@@ -141,7 +159,7 @@ class StatementSpec extends Specification {
     result must beEqualTo(expected)
   }
 
-  def e8 = {
+  def e9 = {
     val input = CreateWarehouse(
       "snowplow_wh",
       Some(CreateWarehouse.Small),

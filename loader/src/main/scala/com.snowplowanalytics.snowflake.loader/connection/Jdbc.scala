@@ -13,7 +13,7 @@
 package com.snowplowanalytics.snowflake.loader
 package connection
 
-import java.sql.{DriverManager, Connection => JdbcConnection}
+import java.sql.DriverManager
 import java.util.Properties
 
 import scala.collection.mutable.ListBuffer
@@ -22,6 +22,7 @@ import cats.syntax.functor._
 import cats.effect.Sync
 
 import com.snowplowanalytics.snowflake.loader.ast._
+import com.snowplowanalytics.snowflake.loader.ast.Statement._
 import com.snowplowanalytics.snowflake.core.Config
 import com.snowplowanalytics.snowflake.generated.ProjectMetadata
 

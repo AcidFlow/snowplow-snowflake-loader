@@ -24,6 +24,7 @@ import cats.effect.concurrent.Ref
 import com.snowplowanalytics.snowflake.core.{Config, ProcessManifest, RunId}
 import com.snowplowanalytics.snowflake.core.Config.S3Folder.{coerce => s3}
 import com.snowplowanalytics.snowflake.loader.ast._
+import com.snowplowanalytics.snowflake.loader.ast.Statement._
 import com.snowplowanalytics.snowflake.loader.connection.{Database, DryRun}
 
 class LoaderSpec extends Specification {
@@ -74,28 +75,27 @@ class LoaderSpec extends Specification {
   }
 
   "getInsertStatement" should {
+    val config = Config(
+      auth = Config.AuthMethod.CredentialsAuth(
+        accessKeyId = "accessKey",
+        secretAccessKey = "secretKey"
+      ),
+      awsRegion = "awsRegion",
+      manifest = "snoflake-manifest",
+      snowflakeRegion = "ue-east-1",
+      stage = "snowplow-stage",
+      stageUrl = Config.S3Folder.coerce("s3://somestage/foo"),
+      badOutputUrl = Some(Config.S3Folder.coerce("s3://someBadRows/foo")),
+      username = "snowfplow-loader",
+      password = Config.PasswordConfig.PlainText("super-secret"),
+      input = Config.S3Folder.coerce("s3://snowflake/input/"),
+      account = "snowplow-account",
+      warehouse = "snowplow_wa",
+      database = "database",
+      schema = "not_an_atomic",
+      maxError = None,
+      jdbcHost = None)
     "build a valid INSERT statement" in {
-      val config = Config(
-        auth = Config.AuthMethod.CredentialsAuth(
-          accessKeyId = "accessKey",
-          secretAccessKey = "secretKey"
-        ),
-        awsRegion = "awsRegion",
-        manifest = "snoflake-manifest",
-        snowflakeRegion = "ue-east-1",
-        stage = "snowplow-stage",
-        stageUrl = Config.S3Folder.coerce("s3://somestage/foo"),
-        badOutputUrl = Some(Config.S3Folder.coerce("s3://someBadRows/foo")),
-        username = "snowfplow-loader",
-        password = Config.PasswordConfig.PlainText("super-secret"),
-        input = Config.S3Folder.coerce("s3://snowflake/input/"),
-        account = "snowplow-account",
-        warehouse = "snowplow_wa",
-        database = "database",
-        schema = "not_an_atomic",
-        maxError = None,
-        jdbcHost = None)
-
       val runId = RunId.ProcessedRunId(
         "archive/enriched/run=2017-10-09-17-40-30/",
         addedAt = DateTime.now(),       // Doesn't matter
@@ -108,7 +108,8 @@ class LoaderSpec extends Specification {
         "some-script",
         false)
 
-      val result = Loader.getInsertStatement(config, runId)
+      val result = Loader.getInsertStatement(config, false, runId)
+      println(result.right.get.getStatement.value)
 
       result must beRight.like {
         case Insert.InsertQuery(schema, table, columns, Select(sColumns, sSchema, sTable)) =>
@@ -127,14 +128,43 @@ class LoaderSpec extends Specification {
           val sTableResult = sTable must beEqualTo("snowplow_tmp_run_2017_10_09_17_40_30")
           val sColumnsAmount = sColumns must haveLength(131)
           val sExactColumns = sColumns must containAllOf(List(
-            Select.CastedColumn("enriched_data","unstruct_event_com_snowplowanalytics_snowplow_link_click_1", SnowflakeDatatype.JsonObject),
-            Select.CastedColumn("enriched_data", "contexts_com_snowplowanalytics_snowplow_web_page_1", SnowflakeDatatype.JsonArray),
-            Select.CastedColumn("enriched_data", "true_tstamp", SnowflakeDatatype.Timestamp),
-            Select.CastedColumn("enriched_data", "refr_domain_userid", SnowflakeDatatype.Varchar(Some(128)))))
+            Select.CastedColumn("enriched_data","unstruct_event_com_snowplowanalytics_snowplow_link_click_1", SnowflakeDatatype.JsonObject, None, false),
+            Select.CastedColumn("enriched_data", "contexts_com_snowplowanalytics_snowplow_web_page_1", SnowflakeDatatype.JsonArray, None, false),
+            Select.CastedColumn("enriched_data", "true_tstamp", SnowflakeDatatype.Timestamp, None, false),
+            Select.CastedColumn("enriched_data", "refr_domain_userid", SnowflakeDatatype.Varchar(Some(128)), None, false)))
 
           schemaResult.and(tableResult).and(columnsAmount)
             .and(sSchemaResult).and(sTableResult).and(sColumnsAmount)
             .and(exactColumns).and(sExactColumns)
+      }
+    }
+
+    "build a valid INSERT statement with TRY_CAST" in {
+      val runId = RunId.ProcessedRunId(
+        "archive/enriched/run=2017-10-09-17-40-30/",
+        addedAt = DateTime.now(),       // Doesn't matter
+        processedAt = DateTime.now(),   // Doesn't matter
+        List(
+          "contexts_com_snowplowanalytics_snowplow_web_page_1",
+          "contexts_com_snowplowanalytics_snowplow_web_page_2",
+          "unstruct_event_com_snowplowanalytics_snowplow_link_click_1"),
+        s3("s3://acme-snowplow/snowflake/run=2017-10-09-17-40-30/"),
+        "some-script",
+        false)
+
+      val result = Loader.getInsertStatement(config, true, runId)
+
+      result must beRight.like {
+        case Insert.InsertQuery(_, _, _, Select(sColumns, _, _)) =>
+          // SELECT
+          val sColumnsAmount = sColumns must haveLength(131)
+          val sExactColumns = sColumns must containAllOf(List(
+            Select.CastedColumn("enriched_data", "unstruct_event_com_snowplowanalytics_snowplow_link_click_1", SnowflakeDatatype.JsonObject, None, true),
+            Select.CastedColumn("enriched_data", "contexts_com_snowplowanalytics_snowplow_web_page_1", SnowflakeDatatype.JsonArray, None, true),
+            Select.CastedColumn("enriched_data", "true_tstamp", SnowflakeDatatype.Timestamp, None, true),
+            Select.CastedColumn("enriched_data", "refr_domain_userid", SnowflakeDatatype.Varchar(Some(128)), None, true)))
+
+            sColumnsAmount.and(sExactColumns)
       }
     }
   }
@@ -181,7 +211,7 @@ class LoaderSpec extends Specification {
       val test = for {
         connection <- Database[IO].getConnection(config)
         manifestState <- Ref.of[IO, ManifestState](LoaderSpec.ManifestState(Nil))
-        code <- Loader.run(connection, config)(Sync[IO], Database[IO], new ProcessingManifestTest(manifestState))
+        code <- Loader.run(connection, config, false)(Sync[IO], Database[IO], new ProcessingManifestTest(manifestState))
         messages <- connection match {
           case Database.Connection.Dry(state) => state.get.map(_.messages.reverse.filterNot(_.startsWith("INSERT INTO")))
           case _ => IO.raiseError(new RuntimeException("Unexpected connection type"))

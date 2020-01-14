@@ -12,6 +12,8 @@
  */
 package com.snowplowanalytics.snowflake.loader.ast
 
+import cats.Show
+
 import com.snowplowanalytics.snowflake.loader.ast.CreateTable._
 
 case class CreateTable(
@@ -23,4 +25,9 @@ case class CreateTable(
 
 object CreateTable {
   case class PrimaryKeyConstraint(name: String, column: String)
+
+  implicit object PrimaryKeyShow extends Show[PrimaryKeyConstraint] {
+    def show(ddl: PrimaryKeyConstraint): String =
+      s"CONSTRAINT ${ddl.name} PRIMARY KEY(${ddl.column})"
+  }
 }

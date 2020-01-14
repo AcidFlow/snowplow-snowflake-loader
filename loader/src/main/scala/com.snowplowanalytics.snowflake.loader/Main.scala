@@ -23,14 +23,14 @@ import com.snowplowanalytics.snowflake.loader.connection.Database
 object Main extends IOApp {
   def run(args: List[String]): IO[ExitCode] =
     Cli.Loader.parse(args).value.flatMap {
-      case Right(Cli.Loader.Load(config, dryRun)) =>
+      case Right(Cli.Loader.Load(config, dryRun, tryCast)) =>
         val database = Database.init(dryRun)
         for {
           state <- ProcessManifest.initState[IO](config.awsRegion)
           manifest = ProcessManifest.awsSyncProcessManifest[IO](state)
           connection <- database.getConnection(config)
           _ <- IO.delay(println("Loading..."))
-          exit <- Loader.run[IO](connection, config)(Sync[IO], database, manifest)
+          exit <- Loader.run[IO](connection, config, tryCast)(Sync[IO], database, manifest)
         } yield exit
       case Right(Cli.Loader.Setup(config, skip, dryRun)) =>
         implicit val D: Database[IO] = Database.init(dryRun)
