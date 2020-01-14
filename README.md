@@ -23,7 +23,7 @@ $ sbt test
 
 ## Copyright and License
 
-Snowflake Loader is copyright 2017-2018 Snowplow Analytics Ltd.
+Snowflake Loader is copyright 2017-2020 Snowplow Analytics Ltd.
 
 Licensed under the **[Apache License, Version 2.0][license]** (the "License");
 you may not use this software except in compliance with the License.
