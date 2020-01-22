@@ -19,6 +19,7 @@ lazy val core = project
   .settings(BuildSettings.buildSettings)
   .settings(BuildSettings.scalifySettings)
   .settings(libraryDependencies ++= commonDependencies)
+  .settings(BuildSettings.dynamoDbSettings)
 
 lazy val loader = project
   .settings(moduleName := "snowplow-snowflake-loader")
@@ -66,6 +67,8 @@ lazy val commonDependencies = Seq(
   Dependencies.igluClient,
   Dependencies.eventsManifest,
   // Scala (test-only)
-  Dependencies.specs2
+  Dependencies.specs2,
+  Dependencies.specs2Scalacheck,
+  Dependencies.scalacheck
 )
 

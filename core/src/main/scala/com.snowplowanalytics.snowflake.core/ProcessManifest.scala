@@ -104,6 +104,7 @@ object ProcessManifest {
           } yield result
         case Left(e) => Sync[F].raiseError(e)
       }
+      case Left(e) => Sync[F].raiseError(new RuntimeException(e))
     }
 
   /** Get S3 client */

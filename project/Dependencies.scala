@@ -32,6 +32,7 @@ object Dependencies {
     val jackson          = "2.6.5"
     // Scala (test only)
     val specs2           = "4.6.0"
+    val scalacheck       = "1.14.1"
   }
 
   // Java
@@ -59,4 +60,7 @@ object Dependencies {
 
   // Scala (test only)
   val specs2           = "org.specs2"            %% "specs2-core"                  % V.specs2         % Test
+  val specs2Scalacheck = "org.specs2"            %% "specs2-scalacheck"            % V.specs2         % Test
+
+  val scalacheck       = "org.scalacheck"        %% "scalacheck"                   % V.scalacheck     % Test
 }
