@@ -169,7 +169,16 @@ object Loader {
   def getInsertStatement(config: Config, folder: RunId.ProcessedRunId): Either[Error, Insert] =
     getColumns(folder.shredTypes) match {
       case Right(tableColumns) =>
-        val castedColumns = tableColumns.map { case (name, dataType) => Select.CastedColumn(Defaults.TempTableColumn, name, dataType) }
+        val castedColumns = tableColumns.map {
+          case (name, t @ SnowflakeDatatype.Varchar(Some(size))) if size > 512 =>
+            Select.CastedColumn(Defaults.TempTableColumn, name, t, Some(Select.Substring(0, size)))
+          case ("refr_term", dataType) =>
+            Select.CastedColumn(Defaults.TempTableColumn, "refr_term", dataType, Some(Select.Substring(1, 255)))
+          case ("mkt_clickid", dataType) =>
+            Select.CastedColumn(Defaults.TempTableColumn, "mkt_clickid", dataType, Some(Select.Substring(1, 128)))
+          case (name, dataType) =>
+            Select.CastedColumn(Defaults.TempTableColumn, name, dataType)
+        }
         val tempTable = getTempTable(folder.runIdFolder, config.schema)
         val source = Select(castedColumns, tempTable.schema, tempTable.name)
         Right(Insert.InsertQuery(config.schema, Defaults.Table, tableColumns.map(_._1), source))
